@@ -47,6 +47,13 @@ This code requires the following packages, and was tested with the package versi
 
 `pytorch (0.5.0)`, `torchvision (0.2.1)`, `scikit-image (0.14.0)`
 
+### Environment
+
+Install environment with:
+```bash:
+conda env create -f environment.yml
+```
+
 ### Training Speed
 
 Depending on your system specification, one training iteration (with the standard batch size of 32) can take more than one second.
