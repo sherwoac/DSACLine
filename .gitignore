@@ -1,1 +1,5 @@
 .idea/
+__pycache__/
+*.net
+log_*.txt
+images_*
