@@ -1,6 +1,6 @@
 import torch
 
-class LineLoss:
+class LineLoss(torch.nn.Module):
 	'''
 	Compares two lines by calculating the distance between their ends in the image.
 	'''
@@ -11,8 +11,42 @@ class LineLoss:
 
 		image_size -- size of the input images, used to normalize the loss
 		'''
+		super(LineLoss, self).__init__()
 		self.image_size = image_size
-	
+
+	def __get_max_points_fast(self, slopes, intercept):
+		"""
+		cf https://math.stackexchange.com/questions/655369/coordinate-of-intersection-between-line-and-square
+		:param slope: b x 1
+		:param intercept: b x 1
+		:return: points where line intersects unit square borders
+		"""
+		batches = slopes.size(0)
+		# right
+		# x = 1
+		# y = slopes + intercept
+		# left
+		# x = 0
+		# y = intercept
+		# top: 1 = ax + b
+		# x = torch.divide(1 - intercept, slopes)
+		# y = 1
+		# bottom: 0 = ax + b
+		# x = torch.divide(- intercept, slopes)
+		# y = 0
+
+		x = torch.column_stack([torch.ones(batches),
+								torch.zeros(batches),
+								torch.divide(1 - intercept, slopes),
+								torch.divide(-1 * intercept, slopes)])
+		y = torch.column_stack([slopes + intercept, intercept, torch.ones(batches), torch.zeros(batches)])
+
+		u = torch.max(torch.abs(x), torch.abs(y))
+		xp = torch.divide(x, u)
+		yp = torch.divide(y, u)
+
+		return xp, yp
+
 	def __get_max_points(self, slope, intercept):
 		'''
 		Calculates the 2D points where a line intersects with the image borders.
@@ -20,6 +54,7 @@ class LineLoss:
 		slope -- slope of the line
 		intercept -- intercept of the line
 		'''
+
 		pts = torch.zeros([2, 2])
 
 		x0 = 0
@@ -101,11 +136,11 @@ class LineLoss:
 		loss1 = pts_est - pts_gt
 		loss1 = loss1.norm(2, 1).sum()
 
-		flip_mat = torch.zeros([2, 2])
-		flip_mat[0, 1] = 1
-		flip_mat[1, 0] = 1
-
+		# flip_mat = torch.zeros([2, 2])
+		# flip_mat.data[0, 1] = 1
+		# flip_mat[1, 0] = 1
+		flip_mat = torch.eye(2).flip(dims=[1])
 		loss2 = pts_est - flip_mat.mm(pts_gt)
 		loss2 = loss2.norm(2, 1).sum()
 
-		return min(loss1, loss2) * self.image_size
+		return torch.min(torch.Tensor([loss1, loss2])) * self.image_size

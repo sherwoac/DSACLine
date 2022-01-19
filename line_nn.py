@@ -14,7 +14,12 @@ class LineNN(nn.Module):
 
 	'''
 
-	def __init__(self, net_capacity, receptive_field = 0, direct = False, image_size = 64, global_output_grid = 8):
+	def __init__(self,
+				 net_capacity,
+				 receptive_field : int = 1,
+				 direct: bool = False,
+				 image_size: int = 64,
+				 global_output_grid: int = 8):
 		'''
 		Constructor.
 
@@ -35,7 +40,7 @@ class LineNN(nn.Module):
 		c = net_capacity
 		output_dim = 2
 		
-		if direct and receptive_field is not 0:
+		if direct and receptive_field != 0:
 			print('Warning: Direct models must have global receptive field (0).')
 
 		# set the conv strides to achieve the desired receptive field
@@ -51,7 +56,7 @@ class LineNN(nn.Module):
 		elif receptive_field == 65:
 			strides = [1, 2, 2, 2, 1, 1, 1]
 		else:
-			if receptive_field is not 0:
+			if receptive_field != 0:
 				print('Warning: Unknown receptive field, using 0 (global).')
 
 			receptive_field = 2 * image_size # set global receptive field
@@ -87,7 +92,7 @@ class LineNN(nn.Module):
 		self.global_output_grid = global_output_grid
 		self.direct_model = direct
 
-	def forward(self, input):
+	def forward(self, input: torch.Tensor.type):
 		'''
 		Forward pass.
 
@@ -122,14 +127,14 @@ class LineNN(nn.Module):
 
 		# map local (patch-centric) point predictions to global image coordinates
 		# i.e. distribute the points over the image
-		patch_offset = 1 / x.size(2)
+		patch_offset = 1. / x.size(2)
 
-		x = x * self.patch_size - self.patch_size / 2 + patch_offset / 2
+		x = x * self.patch_size - 0.5 * self.patch_size + 0.5 * patch_offset
 
-		for col in range(0, x.size(3)):
-			x[:,1,:,col] = x[:,1,:,col] + col * patch_offset
+		for col in range(x.size(3)):
+			x[:, 1, :, col] = x[:, 1, :, col] + col * patch_offset
 			
-		for row in range(0, x.size(2)):
-			x[:,0,row,:] = x[:,0,row,:] + row * patch_offset
+		for row in range(x.size(2)):
+			x[:, 0, row, :] = x[:, 0, row, :] + row * patch_offset
 
 		return x.view(batch_size, 2, -1)
