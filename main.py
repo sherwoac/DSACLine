@@ -55,6 +55,10 @@ parser.add_argument('--cpu', '-cpu', action='store_true',
 parser.add_argument('--session', '-sid', default='',
 	help='custom session name appended to output files. Useful to separate different runs of the program')
 
+parser.add_argument('--output_dir', '-outdir', default='DATA/',
+					help='output directory')
+
+
 opt = parser.parse_args()
 train(opt)
 

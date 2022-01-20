@@ -2,13 +2,13 @@ import numpy
 import cv2
 import os
 
-infolder = './images_rf65_c4_h64_t0.05_schedule4_2' 
+infolder = './DATA/images_rf65_c4_h64_t0.05_schedule4_2'
 outfolder = infolder + '_out' 
 
 files = os.listdir(infolder)
 files.sort()
 
-for i,f in enumerate(files):
+for i, f in enumerate(files):
 
 	infile = infolder + '/' + f
 
