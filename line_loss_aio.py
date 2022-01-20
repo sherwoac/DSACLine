@@ -6,7 +6,7 @@ class LineLossAio(line_loss.LineLoss):
     Compares two lines by calculating the distance between their ends in the image.
     '''
 
-    def __init__(self, image_size):
+    def __init__(self, image_size: int):
         '''
         Constructor.
 
@@ -14,62 +14,56 @@ class LineLossAio(line_loss.LineLoss):
         '''
         super().__init__(image_size)
 
-    def _get_unit_square_intercepts(self, slopes, intercept):
+    @staticmethod
+    def _get_unit_square_intercepts(slopes: torch.FloatTensor, intercepts: torch.FloatTensor) -> torch.FloatTensor:
         """
         returns unit square intercepts for given slope (a) and intercepts (b)
         y = ax + b
         solves:
-        right: y = a + b
-        x = 1
-        y = slopes + intercept
         left: y = b
         x = 0
         y = intercept
-        top: 1 = ax + b
-        x = torch.divide(1 - intercept, slopes)
-        y = 1
+        right: y = a + b
+        x = 1
+        y = slopes + intercept
         bottom: 0 = ax + b
         x = torch.divide(- intercept, slopes)
         y = 0
+        top: 1 = ax + b
+        x = torch.divide(1 - intercept, slopes)
+        y = 1
 
         :param slopes: b x 1
         :param intercepts: b x 1
-        :return: points where line intersects unit square borders: b x 2 pts of [x, y]: b x 2 x 2
+        :return: leftmost ordered points where line intersects unit square borders: b x 2 pts of [x, y]: b x 2 x 2
         """
         batches = slopes.size(0)
-        x = torch.column_stack([torch.ones(batches),
-                                torch.zeros(batches),
-                                torch.divide(1 - intercept, slopes),
-                                torch.divide(-1 * intercept, slopes)])
-
-        y = torch.column_stack([slopes + intercept,
-                                intercept,
+        x = torch.column_stack([torch.zeros(batches),
                                 torch.ones(batches),
-                                torch.zeros(batches)])
+                                torch.divide(-1. * intercepts, slopes),
+                                torch.divide(1. - intercepts, slopes)])
 
-        acceptance = (y >= 0) * (y <= 1) * (x >= 0) * (x <= 1)
-        return torch.column_stack((x[acceptance].reshape(batches, 1, -1), y[acceptance].reshape(batches, 1, -1)))  # b x pts(x, y)
+        y = torch.column_stack([intercepts,
+                                slopes + intercepts,
+                                torch.zeros(batches),
+                                torch.ones(batches)])
 
-    def get_line_loss(self, est, gt):
-        '''
-        Calculate the line loss.
+        acceptance = (y >= 0.) * (y <= 1.) * (x >= 0.) * (x <= 1.)
+        leftmost = torch.argmin(x[acceptance], keepdim=True)
+        rightmost = torch.argmax(x[acceptance], keepdim=True)
+        xs = torch.column_stack((x[acceptance][leftmost], x[acceptance][rightmost]))
+        ys = torch.column_stack((y[acceptance][leftmost], y[acceptance][rightmost]))
+        return torch.row_stack((xs, ys)).reshape(batches, 2, 2)
+
+    def get_line_loss(self, est: torch.FloatTensor, gt: torch.FloatTensor) -> torch.FloatTensor:
+        """
+        Calculate the line loss:
+        currently finds the distance between the left most points, the right most points and adds
 
         est -- estimated line, form: b x 2: b x [intercept, slope]
         gt -- ground truth line, form: b x 2: [intercept, slope]
-        '''
-
+        """
         pts_est = self._get_unit_square_intercepts(est[:, 1], est[:, 0])
         pts_gt = self._get_unit_square_intercepts(gt[:, 1], gt[:, 0])
 
-        # not clear which ends of the lines should be compared (there are ambigious cases), compute both and take min
-        loss1 = pts_est - pts_gt
-        loss1 = loss1.norm(2, 1).sum()
-
-        # flip_mat = torch.zeros([2, 2])
-        # flip_mat.data[0, 1] = 1
-        # flip_mat[1, 0] = 1
-        flip_mat = torch.eye(2).flip(dims=[1]).unsqueeze(0)
-        loss2 = pts_est - torch.matmul(flip_mat, pts_gt)
-        loss2 = loss2.norm(2, 1).sum()
-
-        return torch.min(torch.Tensor([loss1, loss2])) * self.image_size
+        return (pts_est - pts_gt).norm(2, 1).sum() * self.image_size
