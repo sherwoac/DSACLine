@@ -10,7 +10,7 @@ class DsacAio(dsac.DSAC):
     Differentiable RANSAC to robustly fit lines. Attempt to leverage vector ops
     based on: https://github.com/vislearn/DSACLine
     """
-    def __init__(self, hyps, inlier_thresh, inlier_beta, inlier_alpha, loss_function, random_generator):
+    def __init__(self, hyps, inlier_thresh, inlier_beta, inlier_alpha, loss_function, random_generator=None):
         super().__init__(hyps, inlier_thresh, inlier_beta, inlier_alpha, loss_function, random_generator)
 
     def calculate_loss(self, prediction, labels):
@@ -29,65 +29,23 @@ class DsacAio(dsac.DSAC):
         batch_size = prediction.size(0)
         number_of_inliers = prediction.size(2)
 
-        # avg_exp_loss = 0 # expected loss
-        avg_exp_loss = torch.tensor(0., requires_grad=True)
-        # avg_top_loss = 0 # loss of best hypothesis
-        avg_top_loss = torch.tensor(0., requires_grad=True)
+        y_b_p = prediction[:, 0]  # all y-values of the prediction
+        x_b_p = prediction[:, 1]  # all x.values of the prediction
 
-        self.est_parameters = torch.zeros(batch_size, 2) # estimated lines
-        self.est_losses = torch.zeros(batch_size) # loss of estimated lines
+        slopes_b_h, intercepts_b_h = self._sample_hyp(x_b_p, y_b_p)
+        batch_hypothesis_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
+        slopes_b_h, intercepts_b_h = self._refine_hyp(x_b_p, y_b_p, inliers_b_h_p)
 
-        self.batch_inliers = torch.zeros(batch_size, number_of_inliers) # (soft) inliers for estimated lines
+        hyp_losses = self.loss_function.get_loss(torch.stack([slopes_b_h, intercepts_b_h], dim=-1), labels.squeeze())
+        hyp_scores = F.softmax(self.inlier_alpha * batch_hypothesis_scores, 0)
+        exp_loss = torch.sum(hyp_losses * hyp_scores)
 
-        hyp_losses = torch.zeros([self.hyps, 1], requires_grad=True) # loss of each hypothesis
-        hyp_scores = torch.zeros([self.hyps, 1], requires_grad=True) # score of each hypothesis
+        # assemble losses based on top scores
+        top_losses = torch.gather(hyp_losses,
+                                  dim=1,
+                                  index=torch.argmax(hyp_scores, dim=-1, keepdim=True)).sum()
 
-        y = prediction[:, 0]  # all y-values of the prediction
-        x = prediction[:, 1]  # all x.values of the prediction
-
-        slopes, intercepts = self._sample_hyp(x, y)
-        score, inliers = self._soft_inlier_count(slopes, intercepts, x, y)
-
-        for b in range(0, batch_size):
-
-            max_score = 0 	# score of best hypothesis
-
-            for h in range(0, self.hyps):
-                # === step 3: refine hypothesis ===========================
-                slope, intercept = self._refine_hyp(x, y, inliers)
-
-                hyp = torch.zeros([2])
-                hyp[1] = 0. #slope
-                hyp[0] = 0. #intercept
-
-                # === step 4: calculate loss of hypothesis ================
-                loss = self.loss_function(hyp, labels[b])
-
-                # store results
-                hyp_losses.data[h] = loss
-                hyp_scores.data[h] = score
-
-                # keep track of best hypothesis so far
-                if score > max_score:
-                    max_score = score
-                    self.est_losses[b] = loss
-                    self.est_parameters[b] = hyp
-                    self.batch_inliers[b] = inliers
-
-            # === step 5: calculate the expectation ===========================
-
-            #softmax distribution from hypotheses scores
-            hyp_scores = F.softmax(self.inlier_alpha * hyp_scores, 0)
-
-            # expectation of loss
-            exp_loss = torch.sum(hyp_losses * hyp_scores)
-            print(exp_loss.grad)
-            avg_exp_loss = avg_exp_loss + exp_loss
-
-            # loss of best hypothesis (for evaluation)
-            avg_top_loss = avg_top_loss + self.est_losses[b]
-        print(avg_exp_loss.grad)
-        return avg_exp_loss / batch_size, avg_top_loss / batch_size
+        return exp_loss / batch_size, top_losses / batch_size
 
     def _sample_hyp(self,
                     x: torch.FloatTensor,  # b x p
@@ -100,10 +58,11 @@ class DsacAio(dsac.DSAC):
         x -- vector of x values
         y -- vector of y values
         """
+        num_batches = x.size(0)
         num_correspondences = x.size(-1)
 
-        xs = (x.unsqueeze(-2) - x.unsqueeze(-1)).reshape((2, -1))  # b x (p**2) all combinations of x
-        ys = (y.unsqueeze(-2) - y.unsqueeze(-1)).reshape((2, -1))  # b x (p**2)
+        xs = (x.unsqueeze(-2) - x.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2) all combinations of x
+        ys = (y.unsqueeze(-2) - y.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2)
         slopes = ys.divide(xs)  # b x (p**2)
         intercepts = y.repeat((1, num_correspondences)) - slopes * x.repeat((1, num_correspondences))  # b x (p**2)
         acceptance_criteria = ~(torch.abs(xs) < x_threshold) * ~slopes.isnan()  # b x (p**2)
@@ -139,11 +98,44 @@ class DsacAio(dsac.DSAC):
         """
 
         # point line distances
-        dists = torch.abs(slopes.unsqueeze(dim=-1) * xs - ys + intercepts.unsqueeze(dim=-1))
-        dists = torch.divide(dists, torch.sqrt(slopes * slopes + 1).unsqueeze(-1))
+        dists_b_h_p = torch.abs(slopes.unsqueeze(dim=-1) * xs.unsqueeze(-2) - ys.unsqueeze(-2) + intercepts.unsqueeze(dim=-1))
+        dists_b_h_p = torch.divide(dists_b_h_p, torch.sqrt(slopes * slopes + 1).unsqueeze(-1))
 
         # soft inliers
-        dists = 1 - torch.sigmoid(self.inlier_beta * (dists - self.inlier_thresh))
-        scores = torch.sum(dists, dim=[-1])
+        dists_b_h_p = 1 - torch.sigmoid(self.inlier_beta * (dists_b_h_p - self.inlier_thresh))
+        scores_b_h = torch.sum(dists_b_h_p, dim=[-1])
 
-        return scores, dists
+        return scores_b_h, dists_b_h_p
+
+    @staticmethod
+    def _refine_hyp(x_b_p, y_b_p, weights_b_h_p):
+        """
+        Refinement by weighted Deming regression.
+
+        Fits a line minimizing errors in x and y, implementation according to:
+            'Performance of Deming regression analysis in case of misspecified
+            analytical error ratio in method comparison studies'
+            Kristian Linnet, in Clinical Chemistry, 1998
+
+        x -- vector of x values, b x p
+        y -- vector of y values, b x p
+        weights -- vector of weights (1 per point), b x h x p
+        return: slopes, intercepts b x h
+        """
+        ws = weights_b_h_p.sum(dim=-1)
+        xm_b_h = (x_b_p.unsqueeze(-2) * weights_b_h_p).sum(dim=-1) / ws
+        ym_b_h = (y_b_p.unsqueeze(-2) * weights_b_h_p).sum(dim=-1) / ws
+
+        u = torch.pow(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), 2)
+        u = (u * weights_b_h_p).sum(dim=-1)
+
+        q = torch.pow(y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1), 2)
+        q = (q * weights_b_h_p).sum(dim=-1)
+
+        p = torch.mul(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1))
+        p = (p * weights_b_h_p).sum(dim=-1)
+
+        slopes = (q - u + torch.sqrt(torch.pow(u - q, 2) + 4 * torch.pow(p, 2))) / (2 * p)
+        intercepts = ym_b_h - slopes * xm_b_h
+
+        return slopes, intercepts

@@ -5,6 +5,7 @@ import torch
 import dsac
 import dsac_aio
 import line_loss
+import line_area_loss
 
 
 class DsacTestCase(unittest.TestCase):
@@ -67,7 +68,9 @@ class DsacTestCase(unittest.TestCase):
                              9.9329e-01, 7.9274e-05, 0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00,
                              0.0000e+00, 8.3447e-07, 1.5247e-04, 6.9531e-02])
 
-    _batch_repeats = 2
+    _repeat_batches = 16
+    _repeat_hypothesis = 32
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -76,7 +79,7 @@ class DsacTestCase(unittest.TestCase):
         self.rng = torch.Generator()
         self.rng.manual_seed(0)
 
-        self.loss_function = line_loss.LineLoss(64)
+        self.loss_function = line_area_loss.LineLossArea(64)
         self.dsac_instance = dsac.DSAC(64, 0.05, 100, 0.5, self.loss_function, random_generator=self.rng)
         self.dsac_aio_instance = dsac_aio.DsacAio(64, 0.05, 100, 0.5, self.loss_function, random_generator=self.rng)
 
@@ -94,9 +97,9 @@ class DsacTestCase(unittest.TestCase):
                                msg="_top_loss changed from canned result")
 
     def test_aio_losses(self):
-        _points = DsacTestCase._point_predictions[0].T
-        _exp_loss, _top_loss = self.dsac_aio_instance.calculate_loss(_points,
-                                                                     DsacTestCase._labels[0])
+        _points = DsacTestCase._point_predictions
+        _exp_loss, _top_loss = self.dsac_aio_instance.calculate_loss(_points.repeat(self._repeat_batches, 1, 1),
+                                                                     DsacTestCase._labels.repeat(self._repeat_batches, 1, 1, 1))
         print(_exp_loss, _top_loss)
 
 
@@ -118,21 +121,21 @@ class DsacTestCase(unittest.TestCase):
                                places=4,
                                msg=f'intercept: {intercept}, _test_intercept: {_test_intercept}')
 
-        x_points_repeated_b_h = DsacTestCase._point_predictions[:, 1].repeat((2, 1))
-        y_points_repeated_b_h = DsacTestCase._point_predictions[:, 0].repeat((2, 1))
+        x_points_repeated_b_h = DsacTestCase._point_predictions[:, 1].repeat((DsacTestCase._repeat_batches, 1))
+        y_points_repeated_b_h = DsacTestCase._point_predictions[:, 0].repeat((DsacTestCase._repeat_batches, 1))
         slope, intercept = self.dsac_aio_instance._sample_hyp(x_points_repeated_b_h, y_points_repeated_b_h)
 
         self.assertEqual(
             slope.size(),
-            (DsacTestCase._batch_repeats, DsacTestCase._point_predictions.size(-1)),
+            (DsacTestCase._repeat_batches, DsacTestCase._point_predictions.size(-1)),
             msg= f'size incorrect: slope: {slope.size()}, '
-                 f'_test: {(DsacTestCase._batch_repeats, DsacTestCase._point_predictions.size(-1))}')
+                 f'_test: {(DsacTestCase._repeat_batches, DsacTestCase._point_predictions.size(-1))}')
 
         self.assertEqual(
             intercept.size(),
-            (2, DsacTestCase._point_predictions.size(-1)),
+            (DsacTestCase._repeat_batches, DsacTestCase._point_predictions.size(-1)),
             msg=f'size incorrect: slope: {intercept.size()}, '
-                f'_test: {(DsacTestCase._batch_repeats, DsacTestCase._point_predictions.size(-1))}')
+                f'_test: {(DsacTestCase._repeat_batches, DsacTestCase._point_predictions.size(-1))}')
 
     def test_distance_hypothesis(self):
         score, inliers = self.dsac_instance._soft_inlier_count(DsacTestCase._slope,
@@ -184,7 +187,46 @@ class DsacTestCase(unittest.TestCase):
             msg=f'scores_b_h[0, 0] + DsacTestCase._score: '
                 f'{scores_b_h[0, 0].item()} + {DsacTestCase._score.item()}')
 
+    def test_refine_hypothesis(self):
 
+        x = torch.tensor([0.1085, 0.2242, 0.3244, 0.4015, 0.5896, 0.6062, 0.7719, 0.9013, 0.0842,
+                          0.1589, 0.3319, 0.4596, 0.5471, 0.7442, 0.8406, 0.8813, 0.1131, 0.1624,
+                          0.3421, 0.4423, 0.4547, 0.7798, 0.9401, 0.8223, 0.0788, 0.2216, 0.2175,
+                          0.4476, 0.5700, 0.6283, 0.8036, 0.9616, 0.0358, 0.1733, 0.3602, 0.4845,
+                          0.5861, 0.6745, 0.8171, 0.9908, 0.0822, 0.2495, 0.3654, 0.4227, 0.6133,
+                          0.6618, 0.7073, 0.9520, 0.0226, 0.1776, 0.3185, 0.3877, 0.5472, 0.6695,
+                          0.8422, 0.9302, 0.0606, 0.1605, 0.2856, 0.4396, 0.6163, 0.6603, 0.7671,
+                          0.9157])
+
+        y = torch.tensor([0.0861, 0.1257, 0.0515, 0.1268, 0.0770, 0.0997, 0.0592, 0.0958, 0.2231,
+                          0.2381, 0.2704, 0.2795, 0.2634, 0.2071, 0.2360, 0.1441, 0.3529, 0.4061,
+                          0.3052, 0.2759, 0.3166, 0.3056, 0.3228, 0.3671, 0.4645, 0.4836, 0.5504,
+                          0.4749, 0.4456, 0.5506, 0.4487, 0.3892, 0.6053, 0.6116, 0.5717, 0.6192,
+                          0.6300, 0.6466, 0.6653, 0.6228, 0.7433, 0.7244, 0.7168, 0.7845, 0.7109,
+                          0.7292, 0.8752, 0.7742, 0.8426, 0.8965, 0.8667, 0.8021, 0.8961, 0.8720,
+                          0.9262, 0.9114, 0.9545, 1.0058, 0.9443, 0.9712, 0.9435, 0.9914, 0.9653,
+                          0.9858]).reshape((1, 1, -1))
+
+        weights = torch.tensor([0.0000e+00, 2.0504e-05, 4.9069e-03, 9.9331e-01, 8.2016e-05, 6.5565e-06,
+                                0.0000e+00, 0.0000e+00, 0.0000e+00, 1.0848e-05, 9.8987e-01, 7.6473e-04,
+                                7.1526e-07, 0.0000e+00, 0.0000e+00, 0.0000e+00, 3.6836e-05, 3.2816e-02,
+                                8.8804e-01, 4.1499e-03, 2.1392e-04, 0.0000e+00, 0.0000e+00, 0.0000e+00,
+                                2.9665e-04, 9.8973e-01, 8.6490e-01, 2.3842e-07, 0.0000e+00, 0.0000e+00,
+                                0.0000e+00, 0.0000e+00, 4.1988e-03, 9.5099e-01, 7.6294e-06, 0.0000e+00,
+                                0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00, 9.9331e-01, 1.2577e-04,
+                                0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00,
+                                9.8623e-01, 2.6941e-05, 0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00,
+                                0.0000e+00, 0.0000e+00, 5.7524e-02, 8.3447e-07, 0.0000e+00, 0.0000e+00,
+                                0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00])
+
+        slope, intercept = self.dsac_instance._refine_hyp(x, y, weights)
+        slope_aio, intercept_aio = self.dsac_aio_instance._refine_hyp(
+            x.reshape((1, 1, -1)).repeat((DsacTestCase._repeat_batches, DsacTestCase.repeat_hypothesis, 1)),
+            y.reshape((1, 1, -1)).repeat((DsacTestCase._repeat_batches, DsacTestCase.repeat_hypothesis, 1)),
+            weights.reshape((1, 1, -1)).repeat((DsacTestCase._repeat_batches, DsacTestCase.repeat_hypothesis, 1)))
+
+        self.assertAlmostEqual(slope, slope_aio[0, 0])
+        self.assertAlmostEqual(intercept, intercept_aio[0, 0])
 
 
 if __name__ == '__main__':

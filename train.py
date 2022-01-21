@@ -6,10 +6,11 @@ import torchvision
 import imageio
 
 # local
-from dsac import DSAC
+# from dsac import DSAC
+from dsac_aio import DsacAio
 from line_dataset import LineDataset
 from line_nn import LineNN
-from line_loss import LineLoss
+from line_area_loss import LineLossArea
 
 
 def prepare_data(opt, inputs, labels):
@@ -46,8 +47,8 @@ def train(opt):
     # setup the training process
     dataset = LineDataset(opt.imagesize, opt.imagesize)
 
-    loss_function = LineLoss(opt.imagesize)
-    dsac = DSAC(opt.hypotheses, opt.inlierthreshold, opt.inlierbeta, opt.inlieralpha, loss_function)
+    loss_function = LineLossArea(opt.imagesize)
+    dsac = DsacAio(opt.hypotheses, opt.inlierthreshold, opt.inlierbeta, opt.inlieralpha, loss_function)
 
     # we train two CNNs in parallel
     # 1) a CNN that predicts points and is trained with DSAC -> PointNN (good idea)
@@ -69,7 +70,7 @@ def train(opt):
     lrs_direct_nn = torch.optim.lr_scheduler.StepLR(opt_direct_nn, opt.lrstep, gamma=0.5)
 
     # keep track of training progress
-    train_log = open(opt.outdir + 'log_'+sid+'.txt', 'w', 1)
+    train_log = open(opt.output_dir + 'log_'+sid+'.txt', 'w', 1)
 
     # generate validation data (for consistent vizualisation only)
     val_images, val_labels = dataset.sample_lines(opt.valsize)

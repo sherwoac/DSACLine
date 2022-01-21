@@ -1,6 +1,7 @@
 import torch
 import line_loss
 
+
 class LineLossAio(line_loss.LineLoss):
     '''
     Compares two lines by calculating the distance between their ends in the image.
@@ -55,7 +56,7 @@ class LineLossAio(line_loss.LineLoss):
         ys = torch.column_stack((y[acceptance][leftmost], y[acceptance][rightmost]))
         return torch.row_stack((xs, ys)).reshape(batches, 2, 2)
 
-    def get_line_loss(self, est: torch.FloatTensor, gt: torch.FloatTensor) -> torch.FloatTensor:
+    def get_loss(self, est: torch.FloatTensor, gt: torch.FloatTensor) -> torch.FloatTensor:
         """
         Calculate the line loss:
         currently finds the distance between the left most points, the right most points and adds
@@ -67,3 +68,5 @@ class LineLossAio(line_loss.LineLoss):
         pts_gt = self._get_unit_square_intercepts(gt[:, 1], gt[:, 0])
 
         return (pts_est - pts_gt).norm(2, 1).sum() * self.image_size
+
+

@@ -121,7 +121,7 @@ class LineLoss(torch.nn.Module):
 
 		return pts
 
-	def __call__(self, est, gt):
+	def get_loss(self, est, gt):
 		'''
 		Calculate the line loss.
 
