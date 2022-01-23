@@ -22,7 +22,7 @@ parser.add_argument('--inlieralpha', '-ia', type=float, default=0.5,
 parser.add_argument('--inlierbeta', '-ib', type=float, default=100.0, 
 	help='scaling factor within the sigmoid of the soft inlier count')
 
-parser.add_argument('--learningrate', '-lr', type=float, default=0.0001,
+parser.add_argument('--learningrate', '-lr', type=float, default=0.000000000000001,
 	help='learning rate')
 
 parser.add_argument('--lrstep', '-lrs', type=int, default=2500, 

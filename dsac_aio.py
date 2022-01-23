@@ -36,22 +36,40 @@ class DsacAio(dsac.DSAC):
         batch_hypothesis_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
         slopes_b_h, intercepts_b_h = self._refine_hyp(x_b_p, y_b_p, inliers_b_h_p)
 
-        hyp_losses = self.loss_function.get_loss(torch.stack([slopes_b_h, intercepts_b_h], dim=-1), labels.squeeze())
+        model_hypothesis = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
+        losses_b_h = self.loss_function.get_loss(model_hypothesis, labels.squeeze())
         hyp_scores = F.softmax(self.inlier_alpha * batch_hypothesis_scores, 0)
-        exp_loss = torch.sum(hyp_losses * hyp_scores)
+        exp_loss = torch.sum(losses_b_h * hyp_scores)
 
         # assemble losses based on top scores
-        top_losses = torch.gather(hyp_losses,
-                                  dim=1,
-                                  index=torch.argmax(hyp_scores, dim=-1, keepdim=True)).sum()
+        top_loss_locations_b = torch.argmax(hyp_scores, dim=-1, keepdim=True)
+        top_loss = torch.gather(losses_b_h,
+                                dim=1,
+                                index=top_loss_locations_b).sum()
+        """
+        store top:
+           - loss
+           - model params: slope and intercept
+           - inliers
+        """
+        self.est_losses = top_loss.detach()
+        # nice little lesson in gather indexing - need to repeat index to get both values (b x h x 2) out of last dimension
+        top_loss_locations_for_both_model_parameters = top_loss_locations_b.unsqueeze(-1).repeat((1, 1, 2))
+        self.est_parameters = torch.gather(model_hypothesis,
+                                           dim=1,
+                                           index=top_loss_locations_for_both_model_parameters).squeeze().detach()
+        top_loss_locations_for_all_inliers = top_loss_locations_b.unsqueeze(-1).repeat((1, 1, number_of_inliers))
+        self.batch_inliers = torch.gather(inliers_b_h_p,
+                                          dim=1,
+                                          index=top_loss_locations_for_all_inliers).squeeze().detach()
 
-        return exp_loss / batch_size, top_losses / batch_size
+        return exp_loss / batch_size, top_loss / batch_size
 
     def _sample_hyp(self,
                     x: torch.FloatTensor,  # b x p
                     y: torch.FloatTensor,  # b x p
                     x_threshold: float = 0.01) \
-            -> (torch.Tensor, torch.Tensor):
+            -> (torch.FloatTensor, torch.FloatTensor):
         """
         Calculate number_of_required_hypothesis hypotheses (slope, intercept) from two random points (x, y).
 

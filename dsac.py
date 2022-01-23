@@ -26,7 +26,7 @@ class DSAC(torch.nn.Module):
 		self.loss_function = loss_function
 
 		if random_generator is None:
-			self.random_generator = torch.Generator()
+			self.random_generator = torch.Generator(device='cuda')
 		else:
 			self.random_generator = random_generator
 
