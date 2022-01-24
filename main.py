@@ -22,7 +22,7 @@ parser.add_argument('--inlieralpha', '-ia', type=float, default=0.5,
 parser.add_argument('--inlierbeta', '-ib', type=float, default=100.0, 
 	help='scaling factor within the sigmoid of the soft inlier count')
 
-parser.add_argument('--learningrate', '-lr', type=float, default=0.000000000000001,
+parser.add_argument('--learningrate', '-lr', type=float, default=0.00001,
 	help='learning rate')
 
 parser.add_argument('--lrstep', '-lrs', type=int, default=2500, 
@@ -31,7 +31,7 @@ parser.add_argument('--lrstep', '-lrs', type=int, default=2500,
 parser.add_argument('--lrstepoffset', '-lro', type=int, default=30000, 
 	help='keep initial learning rate for at least x iterations')
 
-parser.add_argument('--batchsize', '-bs', type=int, default=32,
+parser.add_argument('--batchsize', '-bs', type=int, default=1024,
 	help='training batch size')
 
 parser.add_argument('--trainiterations', '-ti', type=int, default=50000, 

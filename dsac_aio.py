@@ -1,6 +1,4 @@
 import torch
-import torch.nn.functional as F
-import random
 
 import dsac
 
@@ -26,19 +24,24 @@ class DsacAio(dsac.DSAC):
             B is the number of images in the batch
             2 is the number of parameters (intercept, slope)
         """
+
         batch_size = prediction.size(0)
         number_of_inliers = prediction.size(2)
 
         y_b_p = prediction[:, 0]  # all y-values of the prediction
         x_b_p = prediction[:, 1]  # all x.values of the prediction
 
+        # return torch.nn.functional.mse_loss(x_b_p.sum(-1), labels[:, 0]), 0.
         slopes_b_h, intercepts_b_h = self._sample_hyp(x_b_p, y_b_p)
-        batch_hypothesis_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
+        # return torch.nn.functional.mse_loss(intercepts_b_h.sum(-1), labels[:, 0]), 0.
+
+        batch_hypotheses_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
         slopes_b_h, intercepts_b_h = self._refine_hyp(x_b_p, y_b_p, inliers_b_h_p)
 
-        model_hypothesis = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
-        losses_b_h = self.loss_function.get_loss(model_hypothesis, labels.squeeze())
-        hyp_scores = F.softmax(self.inlier_alpha * batch_hypothesis_scores, 0)
+        model_hypotheses = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
+        losses_b_h = self.loss_function.get_loss(model_hypotheses, labels.squeeze())
+        # nb softmax normalized on the hypotheses dimension
+        hyp_scores = torch.nn.functional.softmax(self.inlier_alpha * batch_hypotheses_scores, dim=1)
         exp_loss = torch.sum(losses_b_h * hyp_scores)
 
         # assemble losses based on top scores
@@ -46,16 +49,16 @@ class DsacAio(dsac.DSAC):
         top_loss = torch.gather(losses_b_h,
                                 dim=1,
                                 index=top_loss_locations_b).sum()
-        """
-        store top:
-           - loss
-           - model params: slope and intercept
-           - inliers
-        """
+
+        # store top:
+        #    - loss
+        #    - model params: slope and intercept
+        #    - inliers
+        #
         self.est_losses = top_loss.detach()
         # nice little lesson in gather indexing - need to repeat index to get both values (b x h x 2) out of last dimension
         top_loss_locations_for_both_model_parameters = top_loss_locations_b.unsqueeze(-1).repeat((1, 1, 2))
-        self.est_parameters = torch.gather(model_hypothesis,
+        self.est_parameters = torch.gather(model_hypotheses,
                                            dim=1,
                                            index=top_loss_locations_for_both_model_parameters).squeeze().detach()
         top_loss_locations_for_all_inliers = top_loss_locations_b.unsqueeze(-1).repeat((1, 1, number_of_inliers))
@@ -66,10 +69,10 @@ class DsacAio(dsac.DSAC):
         return exp_loss / batch_size, top_loss / batch_size
 
     def _sample_hyp(self,
-                    x: torch.FloatTensor,  # b x p
-                    y: torch.FloatTensor,  # b x p
+                    x: torch.Tensor,  # b x p
+                    y: torch.Tensor,  # b x p
                     x_threshold: float = 0.01) \
-            -> (torch.FloatTensor, torch.FloatTensor):
+            -> (torch.Tensor, torch.Tensor):
         """
         Calculate number_of_required_hypothesis hypotheses (slope, intercept) from two random points (x, y).
 
@@ -81,9 +84,9 @@ class DsacAio(dsac.DSAC):
 
         xs = (x.unsqueeze(-2) - x.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2) all combinations of x
         ys = (y.unsqueeze(-2) - y.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2)
-        slopes = ys.divide(xs)  # b x (p**2)
+        slopes = ys.divide(xs + .00001)  # b x (p**2) - +.00001 is a hack to stop nans backpropagating
         intercepts = y.repeat((1, num_correspondences)) - slopes * x.repeat((1, num_correspondences))  # b x (p**2)
-        acceptance_criteria = ~(torch.abs(xs) < x_threshold) * ~slopes.isnan()  # b x (p**2)
+        acceptance_criteria = ~(torch.abs(xs) < x_threshold) * xs.bool()  # b x (p**2)
 
         chosen_accepted_indices = torch.multinomial(acceptance_criteria.double(),  # b x h
                                                     self.hyps,  # number_of_required_hypotheses

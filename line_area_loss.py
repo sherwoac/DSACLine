@@ -15,17 +15,17 @@ class LineLossArea(line_loss.LineLoss):
         """
         super().__init__(image_size)
 
-    def get_loss(self, est: torch.FloatTensor, gt: torch.FloatTensor) -> torch.FloatTensor:
+    def get_loss(self, est: torch.Tensor, gt: torch.Tensor) -> torch.Tensor:
         """
         calculate the square of the area between the lines
         :param est: b x h x [intercept, slope]
         :param gt: b x [intercept, slope]
         :return: sum of the squared areas between the lines, min-ed with 1, the max squared area?
         """
-        def get_squared_area(a_1: torch.FloatTensor,
-                             b_1: torch.FloatTensor,
-                             a_2: torch.FloatTensor,
-                             b_2: torch.FloatTensor) -> torch.FloatTensor:
+        def get_squared_area(a_1: torch.Tensor,
+                             b_1: torch.Tensor,
+                             a_2: torch.Tensor,
+                             b_2: torch.Tensor) -> torch.Tensor:
             """
             calculate area between lines, squared, from Mathematica:
                 \!\(\*SubsuperscriptBox[\(a\), \(1\), \(2\)]\)/3 - (

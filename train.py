@@ -16,11 +16,12 @@ from line_nn import LineNN
 from line_area_loss import LineLossArea
 from line_loss import LineLoss
 
+
 def prepare_data(opt, inputs, labels):
     # convert from numpy images to normalized torch arrays
 
-    inputs = torch.from_numpy(inputs)
-    labels = torch.from_numpy(labels)
+    inputs = torch.tensor(inputs, requires_grad=True)
+    labels = torch.tensor(labels, requires_grad=True)
 
     if not opt.cpu:
         inputs = inputs.cuda()
@@ -93,18 +94,24 @@ def train(opt):
         inputs, labels = prepare_data(opt, input_images, labels)
 
         # point nn forward pass
-        ## ACS: need to understand the output of this bit
         point_prediction = point_nn(inputs)
         # robust line fitting with DSAC
+        # exp_loss, top_loss = dsac.calculate_loss(point_prediction, labels.cuda())
         exp_loss, top_loss = dsac.calculate_loss(point_prediction, labels.cuda())
-        exp_loss.requires_grad = True
-        exp_loss.backward()			# calculate gradients (pytorch autograd)
-        opt_point_nn.step()			# update parameters
-        print(exp_loss.grad)
-        point_prediction = point_nn(inputs)
+        exp_loss.backward()		# calculate gradients (pytorch autograd)
+
+        # for name, param in point_nn.named_parameters():
+        #     print(f"param.data: {name}: {torch.isfinite(param.data).all()} requires grad: {param.requires_grad}")
+        #     print(f"param.grad.data: {torch.isfinite(param.grad.data).all()}")
+        # point_prediction = point_nn(inputs)
+        # for name, param in point_nn.named_parameters():
+        #     print(f"param.data: {name}: {torch.isfinite(param.data).all()} requires grad: {param.requires_grad}")
+        #     print(f"param.grad.data: {torch.isfinite(param.grad.data).all()}")
+
+        # update parameters
         # if iteration >= opt.lrstepoffset:
         #     lrs_point_nn.step()		# update learning rate schedule
-
+        opt_point_nn.step()
         direct_loss = 0.
         # # also train direct nn
         # direct_prediction = direct_nn(inputs)
@@ -141,10 +148,10 @@ def train(opt):
                 points = torch.zeros_like(val_prediction)
                 # direct_val_est = direct_val_est.cpu().numpy()
             else:
-                val_exp, val_loss = dsac.calculate_loss(val_prediction, val_labels)
+                val_exp, val_loss = dsac.calculate_loss(val_prediction, val_labels.cuda())
                 val_correct = dsac.est_losses < opt.valthresh
                 dsac_val_est = dsac.est_parameters.cpu().numpy()
-                points = val_prediction.cpu().numpy()
+                points = val_prediction.cpu()
 
             # direct nn validation prediction
             # direct_val_est = direct_nn(val_inputs)

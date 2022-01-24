@@ -1,6 +1,7 @@
 import torch
 
-class LineLoss(torch.nn.Module):
+
+class LineLoss:
 	'''
 	Compares two lines by calculating the distance between their ends in the image.
 	'''
