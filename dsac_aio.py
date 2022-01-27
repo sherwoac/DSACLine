@@ -38,8 +38,8 @@ class DsacAio(dsac.DSAC):
         batch_hypotheses_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
         slopes_b_h, intercepts_b_h = self._refine_hyp(x_b_p, y_b_p, inliers_b_h_p)
 
-        model_hypotheses = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
-        losses_b_h = self.loss_function.get_loss(model_hypotheses, labels.squeeze())
+        model_hypotheses_b_h = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
+        losses_b_h = self.loss_function.get_loss(model_hypotheses_b_h, labels.squeeze())
         # nb softmax normalized on the hypotheses dimension
         hyp_scores = torch.nn.functional.softmax(self.inlier_alpha * batch_hypotheses_scores, dim=1)
         exp_loss = torch.sum(losses_b_h * hyp_scores)
@@ -56,9 +56,10 @@ class DsacAio(dsac.DSAC):
         #    - inliers
         #
         self.est_losses = top_loss.detach()
-        # nice little lesson in gather indexing - need to repeat index to get both values (b x h x 2) out of last dimension
+        # nice little lesson in gather indexing:
+        # - need to repeat index to get both values (b x h x 2) out of last dimension
         top_loss_locations_for_both_model_parameters = top_loss_locations_b.unsqueeze(-1).repeat((1, 1, 2))
-        self.est_parameters = torch.gather(model_hypotheses,
+        self.est_parameters = torch.gather(model_hypotheses_b_h,
                                            dim=1,
                                            index=top_loss_locations_for_both_model_parameters).squeeze().detach()
         top_loss_locations_for_all_inliers = top_loss_locations_b.unsqueeze(-1).repeat((1, 1, number_of_inliers))

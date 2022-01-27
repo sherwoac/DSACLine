@@ -15,6 +15,7 @@ from line_dataset import LineDataset
 from line_nn import LineNN
 from line_area_loss import LineLossArea
 from line_loss import LineLoss
+from line_loss_aio import LineLossAio
 
 
 def prepare_data(opt, inputs, labels):
@@ -51,9 +52,9 @@ def train(opt):
     # setup the training process
     dataset = LineDataset(opt.imagesize, opt.imagesize)
 
-    loss_function = LineLossArea(opt.imagesize)
-    original_loss_function = LineLoss(image_size=opt.imagesize)
-    dsac = DsacAio(opt.hypotheses, opt.inlierthreshold, opt.inlierbeta, opt.inlieralpha, loss_function)
+    # loss_function = LineLossArea(opt.imagesize)
+    original_loss_function = LineLossAio(image_size=opt.imagesize)
+    dsac = DsacAio(opt.hypotheses, opt.inlierthreshold, opt.inlierbeta, opt.inlieralpha, original_loss_function)
 
     # we train two CNNs in parallel
     # 1) a CNN that predicts points and is trained with DSAC -> PointNN (good idea)
@@ -96,17 +97,8 @@ def train(opt):
         # point nn forward pass
         point_prediction = point_nn(inputs)
         # robust line fitting with DSAC
-        # exp_loss, top_loss = dsac.calculate_loss(point_prediction, labels.cuda())
         exp_loss, top_loss = dsac.calculate_loss(point_prediction, labels.cuda())
         exp_loss.backward()		# calculate gradients (pytorch autograd)
-
-        # for name, param in point_nn.named_parameters():
-        #     print(f"param.data: {name}: {torch.isfinite(param.data).all()} requires grad: {param.requires_grad}")
-        #     print(f"param.grad.data: {torch.isfinite(param.grad.data).all()}")
-        # point_prediction = point_nn(inputs)
-        # for name, param in point_nn.named_parameters():
-        #     print(f"param.data: {name}: {torch.isfinite(param.data).all()} requires grad: {param.requires_grad}")
-        #     print(f"param.grad.data: {torch.isfinite(param.grad.data).all()}")
 
         # update parameters
         # if iteration >= opt.lrstepoffset:
@@ -150,7 +142,7 @@ def train(opt):
             else:
                 val_exp, val_loss = dsac.calculate_loss(val_prediction, val_labels.cuda())
                 val_correct = dsac.est_losses < opt.valthresh
-                dsac_val_est = dsac.est_parameters.cpu().numpy()
+                dsac_val_est = dsac.est_parameters.cpu()
                 points = val_prediction.cpu()
 
             # direct nn validation prediction

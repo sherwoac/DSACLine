@@ -16,7 +16,7 @@ class LineLossAio(line_loss.LineLoss):
         super().__init__(image_size)
 
     @staticmethod
-    def _get_unit_square_intercepts(slopes: torch.FloatTensor, intercepts: torch.FloatTensor) -> torch.FloatTensor:
+    def _get_unit_square_intercepts(slopes: torch.Tensor, intercepts: torch.Tensor) -> torch.Tensor:
         """
         returns unit square intercepts for given slope (a) and intercepts (b)
         y = ax + b
@@ -36,27 +36,40 @@ class LineLossAio(line_loss.LineLoss):
 
         :param slopes: b x 1
         :param intercepts: b x 1
-        :return: leftmost ordered points where line intersects unit square borders: b x 2 pts of [x, y]: b x 2 x 2
+        :return: points where line intersects unit square borders: b x 2 pts of [[x_1, y_1], [x_2, y_2]]: b x 2 x 2
         """
+        assert len(slopes.size()) == 1, "this doesn't work with more than two dimensions"
         batches = slopes.size(0)
-        x = torch.column_stack([torch.zeros(batches),
-                                torch.ones(batches),
-                                torch.divide(-1. * intercepts, slopes),
-                                torch.divide(1. - intercepts, slopes)])
+        x = torch.column_stack([torch.zeros(batches).to(slopes.device),     # x = 0
+                                torch.ones(batches).to(slopes.device),      # x = 1
+                                torch.divide(-1. * intercepts, slopes),     # y = 0
+                                torch.divide(1. - intercepts, slopes)])     # y = 1
 
-        y = torch.column_stack([intercepts,
-                                slopes + intercepts,
-                                torch.zeros(batches),
-                                torch.ones(batches)])
+        y = torch.column_stack([intercepts,                                 # x = 0
+                                slopes + intercepts,                        # x = 1
+                                torch.zeros(batches).to(slopes.device),     # y = 0
+                                torch.ones(batches).to(slopes.device)])     # y = 1
 
-        acceptance = (y >= 0.) * (y <= 1.) * (x >= 0.) * (x <= 1.)
-        leftmost = torch.argmin(x[acceptance], keepdim=True)
-        rightmost = torch.argmax(x[acceptance], keepdim=True)
-        xs = torch.column_stack((x[acceptance][leftmost], x[acceptance][rightmost]))
-        ys = torch.column_stack((y[acceptance][leftmost], y[acceptance][rightmost]))
-        return torch.row_stack((xs, ys)).reshape(batches, 2, 2)
+        hits_unit_square = (y >= 0.) * (y <= 1.) * (x >= 0.) * (x <= 1.)
 
-    def get_loss(self, est: torch.FloatTensor, gt: torch.FloatTensor) -> torch.FloatTensor:
+        # this bit was added to allow for missing the unit square, to replicate original functionality
+        good_lines = torch.sum(hits_unit_square, dim=-1, keepdim=True) == 2
+        big_slopes = torch.abs(slopes.unsqueeze(-1)) > 1
+        x_lines = torch.column_stack([torch.ones(batches, 2).bool().to(slopes.device),
+                                      torch.zeros(batches, 2).bool().to(slopes.device)])
+
+        y_lines = torch.column_stack([torch.zeros(batches, 2).bool().to(slopes.device),
+                                      torch.ones(batches, 2).bool().to(slopes.device)])
+
+        # debug this line with: torch.where(~(torch.sum(acceptance, dim=-1) == 2))
+        acceptance = \
+            hits_unit_square * good_lines + \
+            big_slopes * ~good_lines * y_lines + \
+            ~big_slopes * ~good_lines * x_lines
+
+        return torch.column_stack((x[acceptance], y[acceptance])).reshape(batches, 2, 2)
+
+    def get_loss(self, est: torch.Tensor, gt: torch.Tensor) -> torch.Tensor:
         """
         Calculate the line loss:
         currently finds the distance between the left most points, the right most points and adds
@@ -64,9 +77,21 @@ class LineLossAio(line_loss.LineLoss):
         est -- estimated line, form: b x 2: b x [intercept, slope]
         gt -- ground truth line, form: b x 2: [intercept, slope]
         """
-        pts_est = self._get_unit_square_intercepts(est[:, 1], est[:, 0])
-        pts_gt = self._get_unit_square_intercepts(gt[:, 1], gt[:, 0])
+        batches = gt.size(0)
+        if len(est.size()) == 3:
+            # flatten to b * h then reinflate
+            v_est = est.view(est.size(0) * est.size(1), -1)
+        else:
+            v_est = est.view()
 
-        return (pts_est - pts_gt).norm(2, 1).sum() * self.image_size
+        pts_est = self._get_unit_square_intercepts(v_est[:, 1], v_est[:, 0])
+        pts_gt = self._get_unit_square_intercepts(gt[:, 1], gt[:, 0])
+        pts_est = pts_est.reshape(batches, -1, 2, 2)
+        v_pts_gt = pts_gt.view(batches, 1, 2, 2)
+        same_points_compared = torch.linalg.vector_norm(pts_est - v_pts_gt, dim=-1, ord=2).sum(-1)
+        pts_est_swapped = pts_est.index_select(-2, torch.LongTensor([1, 0]).to(est.device))
+        opposite_points_compared = torch.linalg.vector_norm(pts_est_swapped - v_pts_gt, dim=-1, ord=2).sum(-1)
+        mins = torch.minimum(same_points_compared, opposite_points_compared) * self.image_size
+        return mins
 
 

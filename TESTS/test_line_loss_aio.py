@@ -94,25 +94,66 @@ class LineLossTestCase(unittest.TestCase):
 
         assert torch.allclose(loss, torch.tensor(90.0952))
 
+    def test_intercept_cases(self):
+        # test with same lines
+        delta = 0.0001
+        est = torch.tensor([[0., 1.]]) + delta
+        aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])
+        original_points = self.line_loss._LineLoss__get_max_points(est[0, 1], est[0, 0])
+        assert torch.allclose(aio_points, original_points)
+
+        est = torch.tensor([[100., -.10]])
+        aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])
+        original_points = self.line_loss._LineLoss__get_max_points(est[0, 1], est[0, 0])
+        assert torch.allclose(aio_points, original_points)
+
+        est = torch.tensor([[1.1, 1000]])
+        aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])
+        original_points = self.line_loss._LineLoss__get_max_points(est[0, 1], est[0, 0])
+        assert torch.allclose(aio_points, original_points)
+
+
+        est = torch.tensor([[0., 1.]]) + delta
+        aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])
+        original_points = self.line_loss._LineLoss__get_max_points(est[0, 1], est[0, 0])
+        assert torch.allclose(aio_points, original_points)
+
+        est = torch.tensor([[0., 1.]]) + delta
+        aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])
+        original_points = self.line_loss._LineLoss__get_max_points(est[0, 1], est[0, 0])
+        assert torch.allclose(aio_points, original_points)
+
     def test_line_loss(self):
-        est = torch.tensor([[1., 1.]])
-        gt = torch.tensor([[0., -1.]])
-        loss = self.line_loss(est.squeeze(), gt.squeeze())
-        loss_aio = self.line_loss_aio.get_line_loss(est, gt)
-        # these should be equal
-        # assert torch.allclose(loss, loss_aio)
+        delta = 0.0001
+        est = torch.tensor([[0., 0.]]).repeat((2, 1)) + delta
+        gt = torch.tensor([[1., 0.]]).repeat((2, 1)) - delta
+        loss_aio = self.line_loss_aio.get_loss(est, gt)
 
-        est = torch.tensor([[-1.0516,  2.1709]]).repeat((LineLossTestCase._image_size, 1))
-        gt = torch.tensor([[ 1.0764, -0.8889]]).repeat((LineLossTestCase._image_size, 1))
-        # need to fix the batches x pts case
-        loss = self.line_loss_aio.get_line_loss(est, gt) / LineLossTestCase._image_size
+        loss = 0.
+        for batch in range(gt.size(0)):
+            loss += self.line_loss.get_loss(est[batch].squeeze(), gt[batch].squeeze())
 
-        assert torch.allclose(loss, torch.tensor(90.0952))
+        self.assertAlmostEqual(loss, loss_aio.sum())
+
+        # weird out of image behaviour
+        est = torch.tensor([[100., -.10]])
+        gt = torch.tensor([[100., -.10]])
+        loss_aio = self.line_loss_aio.get_loss(est, gt)
+        loss = self.line_loss.get_loss(est.squeeze(), gt.squeeze())
+
+        est = torch.tensor([[10., 10.]])
+        gt = torch.tensor([[10., 10.]])
+        loss = self.line_loss.get_loss(est.squeeze(), gt.squeeze())
+        est = torch.tensor([[-10., -10.]])
+        gt = torch.tensor([[-10., -10.]])
+        loss = self.line_loss.get_loss(est.squeeze(), gt.squeeze())
+
+
 
     def test_line_area_loss(self):
         est = torch.tensor([[0., 1.]])
         gt = torch.tensor([[1., -1.]])
-        area_squared = self.line_area_loss.get_area_loss(est, gt)
+        area_squared = self.line_area_loss.get_loss(est, gt)
         self.assertAlmostEqual(area_squared.item(), self._image_size / 3., places=5)
 
 
