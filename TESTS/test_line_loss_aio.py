@@ -95,7 +95,12 @@ class LineLossTestCase(unittest.TestCase):
         assert torch.allclose(loss, torch.tensor(90.0952))
 
     def test_intercept_cases(self):
-        # test with same lines
+        # nan over a +/- range
+        est = (torch.randn((10000, 2)) - 0.5) * 10.
+        aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])
+        assert not aio_points.isnan().any(), f"aio_points isnan: {aio_points.isnan().any()}"
+
+        # test with some lines
         delta = 0.0001
         est = torch.tensor([[0., 1.]]) + delta
         aio_points = self.line_loss_aio._get_unit_square_intercepts(est[:, 1], est[:, 0])

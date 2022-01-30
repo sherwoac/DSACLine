@@ -67,6 +67,7 @@ class DsacAio(dsac.DSAC):
                                           dim=1,
                                           index=top_loss_locations_for_all_inliers).squeeze().detach()
 
+        assert not exp_loss.isnan().any() and not top_loss.isnan().any()
         return exp_loss / batch_size, top_loss / batch_size
 
     def _sample_hyp(self,
@@ -102,13 +103,14 @@ class DsacAio(dsac.DSAC):
                                          dim=1,
                                          index=chosen_accepted_indices)
 
+        assert not chosen_slopes.isnan().any() and not chosen_intercepts.isnan().any()
         return chosen_slopes, chosen_intercepts
 
     def _soft_inlier_count(self,
-                           slopes: torch.FloatTensor,  # b x h
-                           intercepts: torch.FloatTensor,  # b x h
-                           xs: torch.FloatTensor,  # b x p
-                           ys: torch.FloatTensor) \
+                           slopes: torch.Tensor,  # b x h
+                           intercepts: torch.Tensor,  # b x h
+                           xs: torch.Tensor,  # b x p
+                           ys: torch.Tensor) \
             -> (torch.Tensor, torch.Tensor):  # b x p
         """
         distance d of point p to a line given by:
@@ -126,7 +128,7 @@ class DsacAio(dsac.DSAC):
         # soft inliers
         dists_b_h_p = 1 - torch.sigmoid(self.inlier_beta * (dists_b_h_p - self.inlier_thresh))
         scores_b_h = torch.sum(dists_b_h_p, dim=[-1])
-
+        assert not scores_b_h.isnan().any() and not dists_b_h_p.isnan().any()
         return scores_b_h, dists_b_h_p
 
     @staticmethod
@@ -159,5 +161,5 @@ class DsacAio(dsac.DSAC):
 
         slopes = (q - u + torch.sqrt(torch.pow(u - q, 2) + 4 * torch.pow(p, 2))) / (2 * p)
         intercepts = ym_b_h - slopes * xm_b_h
-
+        assert not slopes.isnan().any() and not intercepts.isnan().any()
         return slopes, intercepts

@@ -1,3 +1,5 @@
+import os.path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -91,6 +93,15 @@ class LineNN(nn.Module):
 		self.patch_size = receptive_field / image_size
 		self.global_output_grid = global_output_grid
 		self.direct_model = direct
+
+	def load(self, filename):
+		"""
+		loads state from file
+		:param filename:
+		:return:
+		"""
+		assert os.path.isfile(filename), f'file not found at: {filename}'
+		self.load_state_dict(torch.load(filename))
 
 	def forward(self, input: torch.Tensor.type):
 		'''

@@ -1,6 +1,8 @@
 import os
 import warnings
 import time
+import sys
+
 import torch
 import torchvision
 import imageio
@@ -9,7 +11,7 @@ import matplotlib.pyplot as plt
 
 
 # local
-# from dsac import DSAC
+import utils
 from dsac_aio import DsacAio
 from line_dataset import LineDataset
 from line_nn import LineNN
@@ -18,19 +20,6 @@ from line_loss import LineLoss
 from line_loss_aio import LineLossAio
 
 
-def prepare_data(opt, inputs, labels):
-    # convert from numpy images to normalized torch arrays
-
-    inputs = torch.tensor(inputs, requires_grad=True)
-    labels = torch.tensor(labels, requires_grad=True)
-
-    if not opt.cpu:
-        inputs = inputs.cuda()
-
-    inputs.transpose_(1, 3).transpose_(2, 3)
-    inputs = inputs - 0.5 # normalization
-
-    return inputs, labels
 
 
 def batch_loss(loss_function, prediction, labels):
@@ -45,9 +34,16 @@ def batch_loss(loss_function, prediction, labels):
 
 
 def train(opt):
+
+    if opt.set_detect_anomaly:
+        torch.autograd.set_detect_anomaly(True)
+        print(f'torch.autograd.set_detect_anomaly: {True}')
+
     if len(opt.session) > 0:
         opt.session = '_' + opt.session
-    sid = 'rf%d_c%d_h%d_t%.2f%s' % (opt.receptivefield, opt.capacity, opt.hypotheses, opt.inlierthreshold, opt.session)
+
+    sid = utils.get_sid(opt)
+    weights_filename = os.path.join(opt.output_dir, f'weights_pointnn_{sid}.net')
 
     # setup the training process
     dataset = LineDataset(opt.imagesize, opt.imagesize)
@@ -59,6 +55,10 @@ def train(opt):
     # we train two CNNs in parallel
     # 1) a CNN that predicts points and is trained with DSAC -> PointNN (good idea)
     point_nn = LineNN(opt.capacity, opt.receptivefield)
+    if opt.reload:
+        print(f'reloading model weights from: {weights_filename}')
+        point_nn.load(weights_filename)
+
     if not opt.cpu:
         point_nn = point_nn.cuda()
 
@@ -80,7 +80,7 @@ def train(opt):
 
     # generate validation data (for consistent vizualisation only)
     val_images, val_labels = dataset.sample_lines(opt.valsize)
-    val_inputs, val_labels = prepare_data(opt, val_images, val_labels)
+    val_inputs, val_labels = utils.prepare_data(opt, val_images, val_labels)
 
     # start training
     for iteration in range(opt.trainiterations+1):
@@ -92,14 +92,17 @@ def train(opt):
 
         # generate training data
         input_images, labels = dataset.sample_lines(opt.batchsize)
-        inputs, labels = prepare_data(opt, input_images, labels)
+        inputs, labels = utils.prepare_data(opt, input_images, labels)
 
         # point nn forward pass
         point_prediction = point_nn(inputs)
+
         # robust line fitting with DSAC
         exp_loss, top_loss = dsac.calculate_loss(point_prediction, labels.cuda())
+        # exp_loss.register_hook(lambda grad: print(f'grad: {grad}'))
         exp_loss.backward()		# calculate gradients (pytorch autograd)
 
+        assert not exp_loss.isnan().any(), f"exp_loss is nan: {exp_loss}"
         # update parameters
         # if iteration >= opt.lrstepoffset:
         #     lrs_point_nn.step()		# update learning rate schedule
@@ -125,7 +128,7 @@ def train(opt):
         # del exp_loss, top_loss, direct_loss
 
         # store prediction vizualization and nn weights (each couple of iterations)
-        if iteration % opt.storeinterval == 0:
+        if iteration % int(opt.storeinterval * 32 / opt.batchsize) == 0:
 
             point_nn.eval()
             # direct_nn.eval()
@@ -156,19 +159,13 @@ def train(opt):
             # draw DSAC estimates
             viz_dsac = dataset.draw_models(val_labels)
             viz_dsac = dataset.draw_points(points, viz_dsac, dsac.batch_inliers)
-            # viz_dsac = dataset.draw_models(dsac_val_est, viz_dsac, val_correct)
+            viz_dsac = dataset.draw_models(dsac_val_est, viz_dsac, val_correct)
 
             # draw direct estimates
             # viz_direct = dataset.draw_models(val_labels)
             # viz_direct = dataset.draw_models(direct_val_est, viz_direct, direct_val_correct)
-
-            def make_grid(batch):
-                batch = torch.from_numpy(batch)
-                batch.transpose_(1, 3).transpose_(2, 3)
-                return torchvision.utils.make_grid(batch, nrow=3,normalize=False)
-
-            viz_inputs = make_grid(val_images)
-            viz_dsac = make_grid(viz_dsac)
+            viz_inputs = utils.make_grid(val_images)
+            viz_dsac = utils.make_grid(viz_dsac)
             # viz_direct = make_grid(viz_direct)
 
             viz = torch.cat((viz_inputs, viz_dsac, viz_dsac), 2)
@@ -186,7 +183,7 @@ def train(opt):
                 imageio.imsave(filename, viz)
 
             # store model weights
-            torch.save(point_nn.state_dict(), opt.output_dir + 'weights_pointnn_' + sid + '.net')
+            torch.save(point_nn.state_dict(), weights_filename)
             # torch.save(direct_nn.state_dict(), opt.outdir + 'weights_directnn_' + sid + '.net')
 
             print('Storing snapshot. Validation loss: %2.2f' % val_loss, flush=True)

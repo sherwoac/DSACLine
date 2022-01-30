@@ -38,12 +38,12 @@ class LineLossAio(line_loss.LineLoss):
         :param intercepts: b x 1
         :return: points where line intersects unit square borders: b x 2 pts of [[x_1, y_1], [x_2, y_2]]: b x 2 x 2
         """
-        assert len(slopes.size()) == 1, "this doesn't work with more than two dimensions"
+        assert len(slopes.size()) == 1, "_get_unit_square_intercepts doesn't work with more than two dimensions"
         batches = slopes.size(0)
         x = torch.column_stack([torch.zeros(batches).to(slopes.device),     # x = 0
                                 torch.ones(batches).to(slopes.device),      # x = 1
-                                torch.divide(-1. * intercepts, slopes),     # y = 0
-                                torch.divide(1. - intercepts, slopes)])     # y = 1
+                                torch.divide(-1. * intercepts, slopes + .00001),     # y = 0
+                                torch.divide(1. - intercepts, slopes + .00001)])     # y = 1
 
         y = torch.column_stack([intercepts,                                 # x = 0
                                 slopes + intercepts,                        # x = 1
@@ -61,11 +61,15 @@ class LineLossAio(line_loss.LineLoss):
         y_lines = torch.column_stack([torch.zeros(batches, 2).bool().to(slopes.device),
                                       torch.ones(batches, 2).bool().to(slopes.device)])
 
-        # debug this line with: torch.where(~(torch.sum(acceptance, dim=-1) == 2))
         acceptance = \
             hits_unit_square * good_lines + \
             big_slopes * ~good_lines * y_lines + \
             ~big_slopes * ~good_lines * x_lines
+
+        # debug this line with: torch.where(~(torch.sum(acceptance, dim=-1) == 2))
+        assert \
+            torch.sum(torch.sum(acceptance, dim=-1, keepdim=True) == 2) == batches, \
+            f"should be equal: acceptance: {acceptance} batches: {batches}"
 
         return torch.column_stack((x[acceptance], y[acceptance])).reshape(batches, 2, 2)
 
@@ -92,6 +96,7 @@ class LineLossAio(line_loss.LineLoss):
         pts_est_swapped = pts_est.index_select(-2, torch.LongTensor([1, 0]).to(est.device))
         opposite_points_compared = torch.linalg.vector_norm(pts_est_swapped - v_pts_gt, dim=-1, ord=2).sum(-1)
         mins = torch.minimum(same_points_compared, opposite_points_compared) * self.image_size
+        assert not mins.isnan().any()
         return mins
 
 

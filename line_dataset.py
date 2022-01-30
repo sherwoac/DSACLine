@@ -17,6 +17,9 @@ class LineDataset:
 	Class also offers functionality for drawing line parameters, hypotheses and point predictions.
 	'''
 
+	_red = (1, 0, 0)
+	_green = (0, 1, 0)
+	_blue = (0, 0, 1)
 	def __init__(self, imgW = 64, imgH = 64, margin = -5, bg_clr = 0.5):
 		'''
 		Constructor. 
@@ -68,7 +71,7 @@ class LineDataset:
 			data = np.zeros((n, self.imgH, self.imgW, 3), dtype=np.float32)
 			data.fill(self.bg_clr)
 
-		clr = (0, 0, 1)
+		clr = LineDataset._blue
 
 		for i in range (0, n):
 			for j in range (0, m):
@@ -94,20 +97,21 @@ class LineDataset:
 		if data is None: 
 			data = np.zeros((n, self.imgH, self.imgW, 3), dtype=np.float32)
 			data.fill(self.bg_clr)
-			clr = (0, 1, 0)
+			clr = LineDataset._green
 		else:
-			clr = (0, 0, 1)
+			clr = LineDataset._blue
 
-		for i in range (0, n):
+		for i in range(n):
 			lY1 = int(labels[i, 0] * self.imgH)
 			lY2 = int(labels[i, 1] * self.imgW + labels[i, 0] * self.imgH)
 			self.draw_line(data[i], 0, lY1, self.imgW, lY2, clr)
 
 			if correct is not None:
-				
 				# draw border green if estiamte is correct, red otherwise
-				if correct[i]: borderclr = (0, 1, 0)
-				else: borderclr = (1, 0, 0)
+				if correct[i]:
+					borderclr = LineDataset._green
+				else:
+					borderclr = LineDataset._red
 				
 				set_color(data[i], line(0, 0, 0, self.imgW-1), borderclr)			
 				set_color(data[i], line(0, 0, self.imgH-1, 0), borderclr)			

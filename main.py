@@ -1,6 +1,7 @@
 
 import argparse
 from train import train
+from test import test
 
 parser = argparse.ArgumentParser(description='This script creates a toy problem of fitting line parameters (slope+intercept) to synthetic images showing line segments, noise and distracting circles. Two networks are trained in parallel and compared: DirectNN predicts the line parameters directly (two output neurons). PointNN predicts a number of 2D points to which the line parameters are subsequently fitted using differentiable RANSAC (DSAC). The script will produce a sequence of images that illustrate the training process for both networks.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -55,12 +56,22 @@ parser.add_argument('--cpu', '-cpu', action='store_true',
 parser.add_argument('--session', '-sid', default='',
 	help='custom session name appended to output files. Useful to separate different runs of the program')
 
-parser.add_argument('--output_dir', '-outdir', default='DATA/',
+parser.add_argument('--output_dir', '-outdir', default='DATA',
 					help='output directory')
+
+parser.add_argument('--set_detect_anomaly', '-set_detect_anomaly', action='store_true',
+					help='execute torch.set_detect_anomaly(True)')
+
+parser.add_argument('--test', '-test', action='store_true', help='run test only')
 
 
 opt = parser.parse_args()
-train(opt)
+
+if __name__ == '__main__':
+	if opt.test:
+		test(opt)
+	else:
+		train(opt)
 
 
 
