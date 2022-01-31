@@ -76,7 +76,7 @@ def train(opt):
     # lrs_direct_nn = torch.optim.lr_scheduler.StepLR(opt_direct_nn, opt.lrstep, gamma=0.5)
 
     # keep track of training progress
-    train_log = open(opt.output_dir + 'log_'+sid+'.txt', 'w', 1)
+    train_log = open(os.path.join(opt.output_dir, 'log_'+sid+'.txt'), 'w', 1)
 
     # generate validation data (for consistent vizualisation only)
     val_images, val_labels = dataset.sample_lines(opt.valsize)

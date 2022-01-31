@@ -64,6 +64,9 @@ parser.add_argument('--set_detect_anomaly', '-set_detect_anomaly', action='store
 
 parser.add_argument('--validation', '-validation', action='store_true', help='run validation only')
 
+parser.add_argument('--reload', '-reload', action='store_true',
+					help='load weights of the default name and continue training')
+
 
 opt = parser.parse_args()
 

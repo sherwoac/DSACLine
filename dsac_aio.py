@@ -31,15 +31,13 @@ class DsacAio(dsac.DSAC):
         y_b_p = prediction[:, 0]  # all y-values of the prediction
         x_b_p = prediction[:, 1]  # all x.values of the prediction
 
-        # return torch.nn.functional.mse_loss(x_b_p.sum(-1), labels[:, 0]), 0.
         slopes_b_h, intercepts_b_h = self._sample_hyp(x_b_p, y_b_p)
-        # return torch.nn.functional.mse_loss(intercepts_b_h.sum(-1), labels[:, 0]), 0.
-
         batch_hypotheses_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
         slopes_b_h, intercepts_b_h = self._refine_hyp(x_b_p, y_b_p, inliers_b_h_p)
 
         model_hypotheses_b_h = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
         losses_b_h = self.loss_function.get_loss(model_hypotheses_b_h, labels.squeeze())
+
         # nb softmax normalized on the hypotheses dimension
         hyp_scores = torch.nn.functional.softmax(self.inlier_alpha * batch_hypotheses_scores, dim=1)
         exp_loss = torch.sum(losses_b_h * hyp_scores)
@@ -68,7 +66,7 @@ class DsacAio(dsac.DSAC):
                                           index=top_loss_locations_for_all_inliers).squeeze().detach()
 
         assert not exp_loss.isnan().any() and not top_loss.isnan().any()
-        return exp_loss / batch_size, top_loss / batch_size
+        return exp_loss / batch_size, top_loss.sum() / batch_size
 
     def _sample_hyp(self,
                     x: torch.Tensor,  # b x p
@@ -86,9 +84,17 @@ class DsacAio(dsac.DSAC):
 
         xs = (x.unsqueeze(-2) - x.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2) all combinations of x
         ys = (y.unsqueeze(-2) - y.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2)
-        slopes = ys.divide(xs + .00001)  # b x (p**2) - +.00001 is a hack to stop nans backpropagating
-        intercepts = y.repeat((1, num_correspondences)) - slopes * x.repeat((1, num_correspondences))  # b x (p**2)
-        acceptance_criteria = ~(torch.abs(xs) < x_threshold) * xs.bool()  # b x (p**2)
+
+        # filter out same point comparisons
+        remove_me = torch.ones_like(xs).bool()
+        remove_me[:, ::num_correspondences + 1] = False
+        xs = xs[remove_me].reshape(num_batches, num_correspondences * (num_correspondences - 1))
+        ys = ys[remove_me].reshape(num_batches, num_correspondences * (num_correspondences - 1))
+
+        # find slop and intercepts
+        slopes = ys.divide(xs)  # b x (p * (p-1))
+        intercepts = y.repeat((1, num_correspondences - 1)) - slopes * x.repeat((1, num_correspondences - 1))  # b x (p * (p-1))
+        acceptance_criteria = ~(torch.abs(xs) < x_threshold)  # b x (p * (p-1))
 
         chosen_accepted_indices = torch.multinomial(acceptance_criteria.double(),  # b x h
                                                     self.hyps,  # number_of_required_hypotheses
@@ -103,7 +109,7 @@ class DsacAio(dsac.DSAC):
                                          dim=1,
                                          index=chosen_accepted_indices)
 
-        assert not chosen_slopes.isnan().any() and not chosen_intercepts.isnan().any()
+        assert not chosen_slopes.isnan().any() and not chosen_intercepts.isnan().any() and not chosen_slopes.isinf().any()
         return chosen_slopes, chosen_intercepts
 
     def _soft_inlier_count(self,
@@ -146,6 +152,7 @@ class DsacAio(dsac.DSAC):
         weights -- vector of weights (1 per point), b x h x p
         return: slopes, intercepts b x h
         """
+        # this new 0 filtering technology has created a new bug where p is occassionally zero
         ws = weights_b_h_p.sum(dim=-1)
         xm_b_h = (x_b_p.unsqueeze(-2) * weights_b_h_p).sum(dim=-1) / ws
         ym_b_h = (y_b_p.unsqueeze(-2) * weights_b_h_p).sum(dim=-1) / ws
@@ -159,6 +166,7 @@ class DsacAio(dsac.DSAC):
         p = torch.mul(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1))
         p = (p * weights_b_h_p).sum(dim=-1)
 
+        # numerator and denominator are simultaneously zero
         slopes = (q - u + torch.sqrt(torch.pow(u - q, 2) + 4 * torch.pow(p, 2))) / (2 * p)
         intercepts = ym_b_h - slopes * xm_b_h
         assert not slopes.isnan().any() and not intercepts.isnan().any()
