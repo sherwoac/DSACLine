@@ -20,9 +20,13 @@ from line_loss import LineLoss
 from line_loss_aio import LineLossAio
 
 
-def test(opt):
+def validation(opt):
+    # reload model
     sid = utils.get_sid(opt)
     weights_filename = os.path.join(opt.output_dir, f'weights_pointnn_{sid}.net')
+    assert os.path.isfile(weights_filename), f'need: {weights_filename} for validation'
+    point_nn = LineNN(opt.capacity, opt.receptivefield)
+    point_nn.load(weights_filename)
 
     # setup the training process
     dataset = LineDataset(opt.imagesize, opt.imagesize)
@@ -30,13 +34,10 @@ def test(opt):
     val_images, val_labels = dataset.sample_lines(opt.valsize)
     val_inputs, val_labels = utils.prepare_data(opt, val_images, val_labels)
 
-
     # loss_function = LineLossArea(opt.imagesize)
-    original_loss_function = LineLossAio(image_size=opt.imagesize)
-    dsac = DsacAio(opt.hypotheses, opt.inlierthreshold, opt.inlierbeta, opt.inlieralpha, original_loss_function)
+    loss_function = LineLossAio(image_size=opt.imagesize)
+    dsac = DsacAio(opt.hypotheses, opt.inlierthreshold, opt.inlierbeta, opt.inlieralpha, loss_function)
 
-    point_nn = LineNN(opt.capacity, opt.receptivefield)
-    point_nn.load(weights_filename)
     if not opt.cpu:
         point_nn = point_nn.cuda()
         val_labels = val_labels.cuda()
@@ -65,7 +66,7 @@ def test(opt):
         warnings.simplefilter("ignore")
         outfolder = 'images_' + sid
         os.makedirs(outfolder, exist_ok=True)
-        filename = f'{opt.output_dir}/{outfolder}/test_output_{sid}.png'
+        filename = f'{opt.output_dir}/{outfolder}/validation_output_{sid}.png'
         print(f'saving: {filename}')
         imageio.imsave(filename, viz)
 

@@ -1,7 +1,7 @@
 
 import argparse
 from train import train
-from test import test
+from validation import validation
 
 parser = argparse.ArgumentParser(description='This script creates a toy problem of fitting line parameters (slope+intercept) to synthetic images showing line segments, noise and distracting circles. Two networks are trained in parallel and compared: DirectNN predicts the line parameters directly (two output neurons). PointNN predicts a number of 2D points to which the line parameters are subsequently fitted using differentiable RANSAC (DSAC). The script will produce a sequence of images that illustrate the training process for both networks.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -62,14 +62,14 @@ parser.add_argument('--output_dir', '-outdir', default='DATA',
 parser.add_argument('--set_detect_anomaly', '-set_detect_anomaly', action='store_true',
 					help='execute torch.set_detect_anomaly(True)')
 
-parser.add_argument('--test', '-test', action='store_true', help='run test only')
+parser.add_argument('--validation', '-validation', action='store_true', help='run validation only')
 
 
 opt = parser.parse_args()
 
 if __name__ == '__main__':
-	if opt.test:
-		test(opt)
+	if opt.validation:
+		validation(opt)
 	else:
 		train(opt)
 

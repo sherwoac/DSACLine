@@ -9,6 +9,7 @@ from skimage.util import random_noise
 maxSlope = 10 # restrict the maximum slope of generated lines for stability
 minLength = 20 # restrict the minimum length of line segments
 
+
 class LineDataset:
 	'''
 	Generator of line segment images.
@@ -20,6 +21,8 @@ class LineDataset:
 	_red = (1, 0, 0)
 	_green = (0, 1, 0)
 	_blue = (0, 0, 1)
+	_dark = (0.2, 0.2, 0.2)
+	_light = (0.7, 0.7, 0.7)
 	def __init__(self, imgW = 64, imgH = 64, margin = -5, bg_clr = 0.5):
 		'''
 		Constructor. 
@@ -121,7 +124,7 @@ class LineDataset:
 		return data
 
 	def draw_points(self, points, data, inliers=None):
-		'''
+		"""
 		Draw 2D points for a batch of images.
 
 		points -- 2D points, array shape (Nx2xM) where 
@@ -131,17 +134,14 @@ class LineDataset:
 		data -- batch of images to draw to
 		inliers -- soft inlier score for each point, 
 			if given and score < 0.5 point will be drawn green, red otherwise
-		'''
-
-		n = points.shape[0] # number of images
-		m = points.shape[2] # number of points
-
-		for i in range (0, n):
-			for j in range(0, m):
-
-				clr = (0.2, 0.2, 0.2) # draw predicted points as dark circles
+		"""
+		n = points.shape[0]  # number of images
+		m = points.shape[2]  # number of points
+		for i in range(n):
+			for j in range(m):
+				clr = LineDataset._dark  # draw predicted points as dark circles
 				if inliers is not None and inliers[i, j] > 0.5:
-					clr = (0.7, 0.7, 0.7) # draw inliers as light circles
+					clr = LineDataset._light   # draw inliers as light circles
 					
 				r = int(points[i, 0, j] * self.imgH)
 				c = int(points[i, 1, j] * self.imgW)

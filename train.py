@@ -155,7 +155,6 @@ def train(opt):
             #
             # direct_val_est = direct_val_est.cpu().numpy()
 
-
             # draw DSAC estimates
             viz_dsac = dataset.draw_models(val_labels)
             viz_dsac = dataset.draw_points(points, viz_dsac, dsac.batch_inliers)

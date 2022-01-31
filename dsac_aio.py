@@ -48,7 +48,7 @@ class DsacAio(dsac.DSAC):
         top_loss_locations_b = torch.argmax(hyp_scores, dim=-1, keepdim=True)
         top_loss = torch.gather(losses_b_h,
                                 dim=1,
-                                index=top_loss_locations_b).sum()
+                                index=top_loss_locations_b)
 
         # store top:
         #    - loss
