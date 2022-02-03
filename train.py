@@ -136,7 +136,11 @@ def train(opt):
             # DSAC validation prediction
 
             # for some reason val_inputs is much smaller than the training batch.
+            # val_prediction_0 = point_nn(val_inputs[0].unsqueeze(0))
+            # val_prediction_1 = point_nn(val_inputs[0].unsqueeze(0))
+            # assert torch.allclose(val_prediction_0, val_prediction_1)
             val_prediction = point_nn(val_inputs)
+            # assert torch.allclose(val_prediction_0, val_prediction[0])
             if val_prediction.isnan().any():
                 val_prediction[val_prediction.isnan()] = 0.
                 val_exp, val_loss = 0., 0.
@@ -145,8 +149,10 @@ def train(opt):
             else:
                 val_exp, val_loss = dsac.calculate_loss(val_prediction, val_labels.cuda())
                 val_correct = dsac.est_losses < opt.valthresh
-                dsac_val_est = dsac.est_parameters.cpu()
+                # dsac_val_est = dsac.est_parameters.cpu()
                 points = val_prediction.cpu()
+
+
 
             # direct nn validation prediction
             # direct_val_est = direct_nn(val_inputs)
@@ -158,7 +164,7 @@ def train(opt):
             # draw DSAC estimates
             viz_dsac = dataset.draw_models(val_labels)
             viz_dsac = dataset.draw_points(points, viz_dsac, dsac.batch_inliers)
-            viz_dsac = dataset.draw_models(dsac_val_est, viz_dsac, val_correct)
+            viz_dsac = dataset.draw_models(dsac.est_parameters, viz_dsac, val_correct)
 
             # draw direct estimates
             # viz_direct = dataset.draw_models(val_labels)
@@ -176,8 +182,8 @@ def train(opt):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 outfolder = 'images_' + sid
-                os.makedirs(outfolder, exist_ok=True)
-                filename = f'{opt.output_dir}/{outfolder}/prediction_{sid}_{iteration:06d}.png'
+                os.makedirs(os.path.join(opt.output_dir, outfolder), exist_ok=True)
+                filename = os.path.join(opt.output_dir, outfolder, f'prediction_{sid}_{iteration:06d}.png')
                 print(f'saving: {filename}')
                 imageio.imsave(filename, viz)
 

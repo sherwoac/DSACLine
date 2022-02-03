@@ -3,4 +3,4 @@ __pycache__/
 *.net
 log_*.txt
 images_*
-WEIGHTS/
+DATA/

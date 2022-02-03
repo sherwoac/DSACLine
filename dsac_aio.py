@@ -32,14 +32,14 @@ class DsacAio(dsac.DSAC):
         x_b_p = prediction[:, 1]  # all x.values of the prediction
 
         slopes_b_h, intercepts_b_h = self._sample_hyp(x_b_p, y_b_p)
-        batch_hypotheses_scores, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
+        hypotheses_scores_b_h, inliers_b_h_p = self._soft_inlier_count(slopes_b_h, intercepts_b_h, x_b_p, y_b_p)
         slopes_b_h, intercepts_b_h = self._refine_hyp(x_b_p, y_b_p, inliers_b_h_p)
 
-        model_hypotheses_b_h = torch.stack([slopes_b_h, intercepts_b_h], dim=-1)
-        losses_b_h = self.loss_function.get_loss(model_hypotheses_b_h, labels.squeeze())
+        model_hypotheses_b_h = torch.stack([intercepts_b_h, slopes_b_h], dim=-1)
+        losses_b_h = self.loss_function.get_loss(model_hypotheses_b_h, labels.squeeze(dim=-1).squeeze(dim=-1))
 
         # nb softmax normalized on the hypotheses dimension
-        hyp_scores = torch.nn.functional.softmax(self.inlier_alpha * batch_hypotheses_scores, dim=1)
+        hyp_scores = torch.nn.functional.softmax(self.inlier_alpha * hypotheses_scores_b_h, dim=1)
         exp_loss = torch.sum(losses_b_h * hyp_scores)
 
         # assemble losses based on top scores
@@ -65,7 +65,14 @@ class DsacAio(dsac.DSAC):
                                           dim=1,
                                           index=top_loss_locations_for_all_inliers).squeeze().detach()
 
-        assert not exp_loss.isnan().any() and not top_loss.isnan().any()
+        assert not exp_loss.isnan().any() \
+               and not top_loss.isnan().any()\
+               and not hyp_scores.isnan().any()\
+               and not losses_b_h.isnan().any()\
+               and not model_hypotheses_b_h.isnan().any() \
+               and not slopes_b_h.isnan().any() \
+               and not intercepts_b_h.isnan().any()
+
         return exp_loss / batch_size, top_loss.sum() / batch_size
 
     def _sample_hyp(self,
@@ -85,15 +92,17 @@ class DsacAio(dsac.DSAC):
         xs = (x.unsqueeze(-2) - x.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2) all combinations of x
         ys = (y.unsqueeze(-2) - y.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2)
 
-        # filter out same point comparisons
+        # # filter out same point comparisons
         remove_me = torch.ones_like(xs).bool()
         remove_me[:, ::num_correspondences + 1] = False
         xs = xs[remove_me].reshape(num_batches, num_correspondences * (num_correspondences - 1))
         ys = ys[remove_me].reshape(num_batches, num_correspondences * (num_correspondences - 1))
 
         # find slop and intercepts
-        slopes = ys.divide(xs)  # b x (p * (p-1))
+        # slopes = ys.divide(xs)  # b x (p * (p-1))
+        slopes = ys.divide(xs + .00001)  # b x (p * (p-1))
         intercepts = y.repeat((1, num_correspondences - 1)) - slopes * x.repeat((1, num_correspondences - 1))  # b x (p * (p-1))
+        # acceptance_criteria = ~(torch.abs(xs) < x_threshold) * xs.bool()  # b x p **2
         acceptance_criteria = ~(torch.abs(xs) < x_threshold)  # b x (p * (p-1))
 
         chosen_accepted_indices = torch.multinomial(acceptance_criteria.double(),  # b x h
@@ -157,17 +166,28 @@ class DsacAio(dsac.DSAC):
         xm_b_h = (x_b_p.unsqueeze(-2) * weights_b_h_p).sum(dim=-1) / ws
         ym_b_h = (y_b_p.unsqueeze(-2) * weights_b_h_p).sum(dim=-1) / ws
 
-        u = torch.pow(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), 2)
-        u = (u * weights_b_h_p).sum(dim=-1)
+        u_b_h = torch.pow(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), 2)
+        u_b_h = (u_b_h * weights_b_h_p).sum(dim=-1)
 
-        q = torch.pow(y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1), 2)
-        q = (q * weights_b_h_p).sum(dim=-1)
+        q_b_h = torch.pow(y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1), 2)
+        q_b_h = (q_b_h * weights_b_h_p).sum(dim=-1)
 
-        p = torch.mul(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1))
-        p = (p * weights_b_h_p).sum(dim=-1)
+        p_b_h = torch.mul(x_b_p.unsqueeze(dim=-2) - xm_b_h.unsqueeze(dim=-1), y_b_p.unsqueeze(dim=-2) - ym_b_h.unsqueeze(dim=-1))
+        p_b_h = (p_b_h * weights_b_h_p).sum(dim=-1)
 
         # numerator and denominator are simultaneously zero
-        slopes = (q - u + torch.sqrt(torch.pow(u - q, 2) + 4 * torch.pow(p, 2))) / (2 * p)
+        sqrt_me_b_h = torch.pow(u_b_h - q_b_h, 2) + 4 * torch.pow(p_b_h, 2)
+        p_denominator = p_b_h.clone()
+        zero_mask = p_b_h == 0.
+        p_denominator[zero_mask] = 1.
+        # u_b_h[zero_mask] = 1.
+        # q_b_h[zero_mask] = 1.
+        sqrt_me_b_h[zero_mask] = 1.
+        # these should get zero'd in the next numerator
+
+        assert (sqrt_me_b_h >= 0).all()
+        slopes = (q_b_h - u_b_h + torch.sqrt(sqrt_me_b_h)) / (2 * p_denominator)
+        slopes[zero_mask] = 1.
         intercepts = ym_b_h - slopes * xm_b_h
         assert not slopes.isnan().any() and not intercepts.isnan().any()
         return slopes, intercepts

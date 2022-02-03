@@ -5,7 +5,7 @@ import torch
 import dsac
 import dsac_aio
 import line_loss
-import line_area_loss
+import line_loss_aio
 
 
 class DsacTestCase(unittest.TestCase):
@@ -79,9 +79,10 @@ class DsacTestCase(unittest.TestCase):
         self.rng = torch.Generator()
         self.rng.manual_seed(0)
 
-        self.loss_function = line_area_loss.LineLossArea(64)
+        self.loss_function = line_loss.LineLoss(64)
+        self.loss_function_aio = line_loss_aio.LineLossAio(64)
         self.dsac_instance = dsac.DSAC(64, 0.05, 100, 0.5, self.loss_function, random_generator=self.rng)
-        self.dsac_aio_instance = dsac_aio.DsacAio(64, 0.05, 100, 0.5, self.loss_function, random_generator=self.rng)
+        self.dsac_aio_instance = dsac_aio.DsacAio(64, 0.05, 100, 0.5, self.loss_function_aio, random_generator=self.rng)
 
     def test_losses(self):
         _exp_loss, _top_loss = self.dsac_instance.calculate_loss(DsacTestCase._point_predictions, DsacTestCase._labels)
@@ -96,12 +97,41 @@ class DsacTestCase(unittest.TestCase):
                                places=4,
                                msg="_top_loss changed from canned result")
 
-    def test_aio_losses(self):
+    def test_losses(self):
         _points = DsacTestCase._point_predictions
-        _exp_loss, _top_loss = self.dsac_aio_instance.calculate_loss(_points.repeat(self._repeat_batches, 1, 1),
+        _exp_loss, _top_loss = self.dsac_instance.calculate_loss(DsacTestCase._point_predictions, DsacTestCase._labels)
+        _exp_loss_aio, _top_loss_aio = self.dsac_aio_instance.calculate_loss(_points.repeat(self._repeat_batches, 1, 1),
                                                                      DsacTestCase._labels.repeat(self._repeat_batches, 1, 1, 1))
         print(_exp_loss, _top_loss)
 
+    def test_aio_losses(self):
+        _points = DsacTestCase._point_predictions
+        # _exp_loss, _top_loss = self.dsac_instance.calculate_loss(DsacTestCase._point_predictions, DsacTestCase._labels)
+        fake_points = torch.tensor([[[0., 1.], [0., 1.]]])
+        fake_labels = torch.tensor([[0.], [1.]]).reshape((1, 2, 1, 1))
+
+        saved_hyps = self.dsac_aio_instance.hyps
+        self.dsac_aio_instance.hyps = 1
+        _exp_loss_aio, _top_loss_aio = self.dsac_aio_instance.calculate_loss(fake_points,
+                                                                             fake_labels)
+        self.dsac_aio_instance.hyps = saved_hyps
+
+        saved_hyps = self.dsac_instance.hyps
+        self.dsac_instance.hyps = 1
+        _exp_loss, _top_loss = self.dsac_instance.calculate_loss(fake_points,
+                                                                 fake_labels)
+        self.dsac_instance.hyps = saved_hyps
+
+        print(_exp_loss_aio, _exp_loss)
+
+    def test_original_loss(self):
+        fake_points = torch.tensor([[[0., 1.], [0., 1.]]])
+        fake_labels = torch.tensor([[0.], [1.]]).reshape((1, 2, 1, 1))
+        saved_hyps = self.dsac_instance.hyps
+        self.dsac_instance.hyps = 1
+        _exp_loss, _top_loss = self.dsac_instance.calculate_loss(fake_points,
+                                                                fake_labels)
+        self.dsac_instance.hyps = saved_hyps
 
     def test_sample_hypothesis(self):
         _test_slope = torch.tensor([-0.2246])
@@ -151,7 +181,7 @@ class DsacTestCase(unittest.TestCase):
         assert torch.allclose(DsacTestCase._inliers, inliers, rtol=0.001), \
             f'dsac_instance._inliers + inliers unequal: {DsacTestCase._inliers} + {inliers}'
 
-        scores, inliers = self.dsac_aio_instance._soft_inlier_count(
+        scores, inliersa = self.dsac_aio_instance._soft_inlier_count(
             DsacTestCase._slope.repeat(2),
             DsacTestCase._intercept.repeat(2),
             DsacTestCase._points_x,
@@ -171,14 +201,23 @@ class DsacTestCase(unittest.TestCase):
             msg=f'dsac_aio_instance._score[0] + DsacTestCase._score: '
                 f'{scores[0].item()} + {DsacTestCase._score.item()}')
 
-        # now for batches
-        scores_b_h, inliers_b_h = self.dsac_aio_instance._soft_inlier_count(
-            DsacTestCase._slope.repeat((2, 2)),
-            DsacTestCase._intercept.repeat((2, 2)),
-            DsacTestCase._points_x.repeat((2, 1)),
-            DsacTestCase._points_y.repeat((2, 1)))
+        assert torch.allclose(inliersa, inliers)
 
+        # now for batches x hypothesis x points
+        num_batches = 10
+        num_hypotheses = 4
+        num_points = DsacTestCase._points_x.size()[0]
+
+        scores_b_h, inliers_b_h_p = self.dsac_aio_instance._soft_inlier_count(
+            DsacTestCase._slope.repeat((num_batches, num_hypotheses)),
+            DsacTestCase._intercept.repeat((num_batches, num_hypotheses)),
+            DsacTestCase._points_x.repeat((num_batches, 1)),
+            DsacTestCase._points_y.repeat((num_batches, 1)))
+
+        assert scores_b_h.size() == torch.Size((num_batches, num_hypotheses)), f"scores_b_h.size: {scores_b_h.size()} {torch.Size((num_batches, num_hypotheses))}"
+        assert inliers_b_h_p.size() == torch.Size((num_batches, num_hypotheses, num_points)), f"inliers_b_h_p.size: {inliers_b_h_p.size()} {(num_batches, num_hypotheses, num_points)}"
         assert (scores_b_h == scores_b_h[0, 0]).all().item(), f'scores_b_h unequal: {scores_b_h}'
+        assert (inliers_b_h_p == inliers_b_h_p[0, 0]).all().item(), f'scores_b_h unequal: {scores_b_h}'
 
         self.assertAlmostEqual(
             scores_b_h[0, 0].item(),
@@ -186,6 +225,8 @@ class DsacTestCase(unittest.TestCase):
             places=4,
             msg=f'scores_b_h[0, 0] + DsacTestCase._score: '
                 f'{scores_b_h[0, 0].item()} + {DsacTestCase._score.item()}')
+
+        assert torch.allclose(inliers_b_h_p[0, 0], DsacTestCase._inliers, atol=0.0001)
 
     def test_refine_hypothesis(self):
 
@@ -205,7 +246,7 @@ class DsacTestCase(unittest.TestCase):
                           0.6300, 0.6466, 0.6653, 0.6228, 0.7433, 0.7244, 0.7168, 0.7845, 0.7109,
                           0.7292, 0.8752, 0.7742, 0.8426, 0.8965, 0.8667, 0.8021, 0.8961, 0.8720,
                           0.9262, 0.9114, 0.9545, 1.0058, 0.9443, 0.9712, 0.9435, 0.9914, 0.9653,
-                          0.9858]).reshape((1, 1, -1))
+                          0.9858])
 
         weights = torch.tensor([0.0000e+00, 2.0504e-05, 4.9069e-03, 9.9331e-01, 8.2016e-05, 6.5565e-06,
                                 0.0000e+00, 0.0000e+00, 0.0000e+00, 1.0848e-05, 9.8987e-01, 7.6473e-04,
@@ -219,11 +260,16 @@ class DsacTestCase(unittest.TestCase):
                                 0.0000e+00, 0.0000e+00, 5.7524e-02, 8.3447e-07, 0.0000e+00, 0.0000e+00,
                                 0.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00])
 
+        # now for batches x hypothesis x points
+        num_batches = 10
+        num_hypotheses = 4
+        num_points = DsacTestCase._points_x.size()[0]
+
         slope, intercept = self.dsac_instance._refine_hyp(x, y, weights)
         slope_aio, intercept_aio = self.dsac_aio_instance._refine_hyp(
-            x.reshape((1, 1, -1)).repeat((DsacTestCase._repeat_batches, DsacTestCase.repeat_hypothesis, 1)),
-            y.reshape((1, 1, -1)).repeat((DsacTestCase._repeat_batches, DsacTestCase.repeat_hypothesis, 1)),
-            weights.reshape((1, 1, -1)).repeat((DsacTestCase._repeat_batches, DsacTestCase.repeat_hypothesis, 1)))
+            x.repeat((num_batches, 1)),
+            y.repeat((num_batches, 1)),
+            weights.repeat((num_batches, num_hypotheses, 1)))
 
         self.assertAlmostEqual(slope, slope_aio[0, 0])
         self.assertAlmostEqual(intercept, intercept_aio[0, 0])

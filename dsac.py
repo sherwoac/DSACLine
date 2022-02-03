@@ -166,7 +166,7 @@ class DSAC(torch.nn.Module):
 				hyp[0] = intercept
 
 				# === step 4: calculate loss of hypothesis ================
-				loss = self.loss_function(hyp, labels[b]) 
+				loss = self.loss_function.get_loss(hyp, labels[b])
 
 				# store results
 				hyp_losses.data[h] = loss

@@ -96,7 +96,7 @@ class LineLossAio(line_loss.LineLoss):
         pts_est_swapped = pts_est.index_select(-2, torch.LongTensor([1, 0]).to(est.device))
         opposite_points_compared = torch.linalg.vector_norm(pts_est_swapped - v_pts_gt, dim=-1, ord=2).sum(-1)
         mins = torch.minimum(same_points_compared, opposite_points_compared) * self.image_size
-        assert not mins.isnan().any()
+        assert not mins.isnan().any() and not pts_est.isnan().any()
         return mins
 
 
