@@ -92,18 +92,14 @@ class DsacAio(dsac.DSAC):
         xs = (x.unsqueeze(-2) - x.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2) all combinations of x
         ys = (y.unsqueeze(-2) - y.unsqueeze(-1)).reshape((num_batches, -1))  # b x (p**2)
 
-        # # filter out same point comparisons
-        remove_me = torch.ones_like(xs).bool()
-        remove_me[:, ::num_correspondences + 1] = False
-        xs = xs[remove_me].reshape(num_batches, num_correspondences * (num_correspondences - 1))
-        ys = ys[remove_me].reshape(num_batches, num_correspondences * (num_correspondences - 1))
+        # along with same point comparisons, these numbers are coincidentally the same, rarely, so need to filter zeros
+        remove_zeros = xs == 0.
+        xs[remove_zeros] = 1.
 
-        # find slop and intercepts
-        # slopes = ys.divide(xs)  # b x (p * (p-1))
-        slopes = ys.divide(xs + .00001)  # b x (p * (p-1))
-        intercepts = y.repeat((1, num_correspondences - 1)) - slopes * x.repeat((1, num_correspondences - 1))  # b x (p * (p-1))
-        # acceptance_criteria = ~(torch.abs(xs) < x_threshold) * xs.bool()  # b x p **2
-        acceptance_criteria = ~(torch.abs(xs) < x_threshold)  # b x (p * (p-1))
+        # find slope and intercepts
+        slopes = ys.divide(xs)  # b x (p ** 2)
+        intercepts = y.repeat((1, num_correspondences)) - slopes * x.repeat((1, num_correspondences))  # b x (p ** 2)
+        acceptance_criteria = ~(torch.abs(xs) < x_threshold) * ~remove_zeros  # b x (p ** 2)
 
         chosen_accepted_indices = torch.multinomial(acceptance_criteria.double(),  # b x h
                                                     self.hyps,  # number_of_required_hypotheses
@@ -118,7 +114,8 @@ class DsacAio(dsac.DSAC):
                                          dim=1,
                                          index=chosen_accepted_indices)
 
-        assert not chosen_slopes.isnan().any() and not chosen_intercepts.isnan().any() and not chosen_slopes.isinf().any()
+        assert not slopes.isnan().any() and not intercepts.isnan().any() \
+               and not slopes.isinf().any() and not intercepts.isinf().any()
         return chosen_slopes, chosen_intercepts
 
     def _soft_inlier_count(self,

@@ -173,7 +173,7 @@ class LineDataset:
 
 				clr = (random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
 
-				rr, cc, val =  circle_perimeter_aa(cY1, cX1, cR)
+				rr, cc, val = circle_perimeter_aa(cY1, cX1, cR)
 				set_color(data[i], (rr, cc), clr, val)
 
 			# create line segment
