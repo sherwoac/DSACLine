@@ -120,7 +120,8 @@ class LineNN(nn.Module):
 		x = F.relu(self.bn6(self.conv6(x)))
 		x = F.relu(self.bn7(self.conv7(x)))
 
-		if self.global_model: x = self.pool(x)
+		if self.global_model:
+			x = self.pool(x)
 
 		x = F.relu(self.bn8(self.fc1(x)))
 		x = F.relu(self.bn9(self.fc2(x)))

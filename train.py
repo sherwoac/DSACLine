@@ -2,7 +2,7 @@ import os
 import warnings
 import time
 import sys
-
+import time
 import torch
 import torchvision
 import imageio
@@ -15,11 +15,11 @@ import utils
 from dsac_aio import DsacAio
 from line_dataset import LineDataset
 from line_nn import LineNN
+from line_squeeze import LineSqueezeNN
+from line_squeeze_fire import LineSqueezeFireNN
 from line_area_loss import LineLossArea
 from line_loss import LineLoss
 from line_loss_aio import LineLossAio
-
-
 
 
 def batch_loss(loss_function, prediction, labels):
@@ -43,10 +43,11 @@ def train(opt):
         opt.session = '_' + opt.session
 
     sid = utils.get_sid(opt)
+
     weights_filename = os.path.join(opt.output_dir, f'weights_pointnn_{sid}.net')
 
     # setup the training process
-    dataset = LineDataset(opt.imagesize, opt.imagesize)
+    dataset = LineDataset(opt.imagesize, opt.imagesize, max_sample_size=opt.batchsize)
 
     # loss_function = LineLossArea(opt.imagesize)
     original_loss_function = LineLossAio(image_size=opt.imagesize)
@@ -54,7 +55,8 @@ def train(opt):
 
     # we train two CNNs in parallel
     # 1) a CNN that predicts points and is trained with DSAC -> PointNN (good idea)
-    point_nn = LineNN(opt.capacity, opt.receptivefield)
+    # point_nn = LineNN(opt.capacity, opt.receptivefield)
+    point_nn = LineSqueezeFireNN(receptive_field=opt.receptivefield, image_size=opt.imagesize)
     if opt.reload:
         print(f'reloading model weights from: {weights_filename}')
         point_nn.load(weights_filename)
@@ -76,14 +78,18 @@ def train(opt):
     # lrs_direct_nn = torch.optim.lr_scheduler.StepLR(opt_direct_nn, opt.lrstep, gamma=0.5)
 
     # keep track of training progress
-    train_log = open(os.path.join(opt.output_dir, 'log_'+sid+'.txt'), 'w', 1)
+    timestr = time.strftime("%Y%m%d%H%M%S")
+    train_log = open(os.path.join(opt.output_dir, f'log_{sid}_{timestr}.txt'), 'w', 1)
 
     # generate validation data (for consistent vizualisation only)
     val_images, val_labels = dataset.sample_lines(opt.valsize)
     val_inputs, val_labels = utils.prepare_data(opt, val_images, val_labels)
-
+    dataset_size = opt.batchsize * 100
+    dataset_images, dataset_labels = dataset.sample_lines(dataset_size)
     # start training
     for iteration in range(opt.trainiterations+1):
+        batch_choices = dataset._rng.integers(low=0, high=dataset_size, size=opt.batchsize)
+        batch_images, batch_labels = dataset_images[batch_choices], dataset_labels[batch_choices]
         start_time = time.time()
 
         # reset gradient buffer
@@ -91,18 +97,15 @@ def train(opt):
         # opt_direct_nn.zero_grad()
 
         # generate training data
-        input_images, labels = dataset.sample_lines(opt.batchsize)
-        inputs, labels = utils.prepare_data(opt, input_images, labels)
+        inputs, labels = utils.prepare_data(opt, batch_images, batch_labels)
 
         # point nn forward pass
         point_prediction = point_nn(inputs)
 
         # robust line fitting with DSAC
         exp_loss, top_loss = dsac.calculate_loss(point_prediction, labels.cuda())
-        # exp_loss.register_hook(lambda grad: print(f'grad: {grad}'))
         exp_loss.backward()		# calculate gradients (pytorch autograd)
 
-        assert not exp_loss.isnan().any(), f"exp_loss is nan: {exp_loss}"
         # update parameters
         # if iteration >= opt.lrstepoffset:
         #     lrs_point_nn.step()		# update learning rate schedule

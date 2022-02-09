@@ -20,7 +20,7 @@ def prepare_data(opt, inputs, labels):
 def make_grid(batch):
     batch = torch.from_numpy(batch)
     batch.transpose_(1, 3).transpose_(2, 3)
-    return torchvision.utils.make_grid(batch, nrow=3,normalize=False)
+    return torchvision.utils.make_grid(batch, nrow=3, normalize=False)
 
 
 def get_sid(opt):

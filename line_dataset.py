@@ -1,42 +1,58 @@
-import random
+import tqdm
 import numpy as np
 import math
 
 from skimage.draw import line, line_aa, disk, set_color, circle_perimeter_aa
-from skimage.io import imsave
 from skimage.util import random_noise
-
-maxSlope = 10 # restrict the maximum slope of generated lines for stability
-minLength = 20 # restrict the minimum length of line segments
 
 
 class LineDataset:
-	'''
+	"""
 	Generator of line segment images.
 
 	Images will have 1 random line segment each, filled with noise and distractor circles.
 	Class also offers functionality for drawing line parameters, hypotheses and point predictions.
-	'''
-
+	"""
 	_red = (1, 0, 0)
 	_green = (0, 1, 0)
 	_blue = (0, 0, 1)
 	_dark = (0.2, 0.2, 0.2)
 	_light = (0.7, 0.7, 0.7)
-	def __init__(self, imgW = 64, imgH = 64, margin = -5, bg_clr = 0.5):
-		'''
+	_min_circles = 2
+	_max_circles = 3
+	_maxSlope = 10  # restrict the maximum slope of generated lines for stability
+	_minLength = 20  # restrict the minimum length of line segments
+
+	def __init__(self,
+				 imgW: int = 64,
+				 imgH: int = 64,
+				 margin: int = -2,
+				 bg_clr: float = 0.5,
+				 max_sample_size: int = 1024,
+				 rng: np.random._generator.Generator = None):
+		"""
 		Constructor. 
 
 		imgW -- image width (default 64)
 		imgH -- image height (default 64)
 		margin -- lines segments are sampled within this margin, negative value means that a line segment can start or end outside the image (default -5)
 		bg_clr -- background intensity (default 0.5)
-		'''
-		
+		"""
+		if rng is not None:
+			self._rng = rng
+		else:
+			self._rng = np.random.default_rng()
+
 		self.imgW = imgW
 		self.imgH = imgH
 		self.margin = margin
 		self.bg_clr = bg_clr
+
+		# make the random numbers once
+		# do common mass random numbers up front
+		self.line_colours = self._rng.random((max_sample_size * 10, 3))
+		self.lX = np.arange(self.margin, self.imgW-self.margin+1)
+		self.lY = np.arange(self.margin, self.imgH-self.margin+1)
 
 	def draw_line(self, data, lX1, lY1, lX2, lY2, clr, alpha=1.0):
 		'''
@@ -67,17 +83,17 @@ class LineDataset:
 		
 		'''
 
-		n = labels.shape[0] # number of images
-		m = labels.shape[1] # number of hypotheses
+		n = labels.shape[0]  # number of images
+		m = labels.shape[1]  # number of hypotheses
 
-		if data is None: # create new batch of images
+		if data is None:  # create new batch of images
 			data = np.zeros((n, self.imgH, self.imgW, 3), dtype=np.float32)
 			data.fill(self.bg_clr)
 
 		clr = LineDataset._blue
 
-		for i in range (0, n):
-			for j in range (0, m):
+		for i in range(n):
+			for j in range(m):
 				lY1 = int(labels[i, j, 0] * self.imgH)
 				lY2 = int(labels[i, j, 1] * self.imgW + labels[i, j, 0] * self.imgH)
 				self.draw_line(data[i], 0, lY1, self.imgW, lY2, clr, scores[i, j])
@@ -150,64 +166,63 @@ class LineDataset:
 
 		return data
 
-	def sample_lines(self, n):
-		'''
+	def sample_lines(self, n: int):
+		"""'''
 		Create new input images of random line segments and distractors along with ground truth parameters.
 
 		n -- number of images to create
-		'''
+		"""
 
 		data = np.zeros((n, self.imgH, self.imgW, 3), dtype=np.float32)
 		data.fill(self.bg_clr)
 		labels = np.ndarray((n, 2, 1, 1), dtype=np.float32)
 
-		for i in range (0, n): # for each image
-
+		mean_radius = int(0.5 * .9 * self.imgW)
+		nC = self._rng.integers(LineDataset._min_circles, LineDataset._max_circles, n)
+		cR = self._rng.integers(int(0.1 * self.imgW), int(self.imgW), (n, LineDataset._max_circles))
+		cX1 = self._rng.integers(-1 * mean_radius, self.imgW + mean_radius + 1, (n, LineDataset._max_circles))
+		cY1 = self._rng.integers(-1 * mean_radius, self.imgH + mean_radius + 1, (n, LineDataset._max_circles))
+		circle_colours = self._rng.choice(self.line_colours, size=(n, LineDataset._max_circles), axis=0)
+		for i in tqdm.tqdm(range(n)):  # for each image
 			# create a random number of distractor circles
-			nC = random.randint(2, 5)
-			for c in range(0, nC):
-
-				cR = random.randint(int(0.1 * self.imgW), int(1 * self.imgW))			
-				cX1 = random.randint(int(-0.5 * cR), int(self.imgW+0.5*cR+1))
-				cY1 = random.randint(int(-0.5 * cR), int(self.imgH+0.5*cR+1))	
-
-				clr = (random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
-
-				rr, cc, val = circle_perimeter_aa(cY1, cX1, cR)
-				set_color(data[i], (rr, cc), clr, val)
+			for c in range(nC[i]):
+				rr, cc, val = circle_perimeter_aa(cY1[i, c], cX1[i, c], cR[i, c])
+				set_color(data[i], (rr, cc), circle_colours[i, c], val)
 
 			# create line segment
 			while True:
-
 				# sample segment end points
-				lX1 = random.randint(self.margin, self.imgW-self.margin+1)
-				lX2 = random.randint(self.margin, self.imgW-self.margin+1)
-				lY1 = random.randint(self.margin, self.imgH-self.margin+1)
-				lY2 = random.randint(self.margin, self.imgH-self.margin+1)
+				lX1 = self._rng.choice(self.lX)
+				lX2 = self._rng.choice(self.lX)
+				lY1 = self._rng.choice(self.lY)
+				lY2 = self._rng.choice(self.lY)
 
 				# check min length
 				length = math.sqrt((lX1 - lX2) * (lX1 - lX2) + (lY1 - lY2) * (lY1 - lY2))
-				if length < minLength: continue
+				if length < LineDataset._minLength:
+					continue
 
 				# random color
-				clr = (random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
+				line_colour = self._rng.choice(self.line_colours, axis=0)
 
 				# calculate line ground truth parameters
 				delta = lX2 - lX1
-				if delta == 0: delta = 1 
+				if delta == 0:
+					delta = 1
 
 				slope = (lY2 - lY1) / delta
 				intercept = lY1 - slope * lX1
 
 				# not too steep for stability
-				if abs(slope) < maxSlope: break
+				if abs(slope) < LineDataset._maxSlope:
+					break
 
 			labels[i, 0] = intercept / self.imgH
 			labels[i, 1] = slope
 
-			self.draw_line(data[i], lX1, lY1, lX2, lY2, clr)
+			self.draw_line(data[i], lX1, lY1, lX2, lY2, line_colour)
 
 			# apply some noise on top
-			data[i] = random_noise(data[i], mode='speckle')
+			data[i] = random_noise(data[i], seed=self._rng, mode='speckle')
 
 		return data, labels
