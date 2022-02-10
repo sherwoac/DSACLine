@@ -6,7 +6,7 @@ import time
 import torch
 import torchvision
 import imageio
-
+import numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -55,8 +55,8 @@ def train(opt):
 
     # we train two CNNs in parallel
     # 1) a CNN that predicts points and is trained with DSAC -> PointNN (good idea)
-    # point_nn = LineNN(opt.capacity, opt.receptivefield)
-    point_nn = LineSqueezeFireNN(receptive_field=opt.receptivefield, image_size=opt.imagesize)
+    point_nn = LineNN(opt.capacity, opt.receptivefield)
+    # point_nn = LineSqueezeFireNN(receptive_field=opt.receptivefield, image_size=opt.imagesize)
     if opt.reload:
         print(f'reloading model weights from: {weights_filename}')
         point_nn.load(weights_filename)
@@ -66,7 +66,7 @@ def train(opt):
 
     point_nn.train()
     opt_point_nn = torch.optim.Adam(point_nn.parameters(), lr=opt.learningrate)
-    # lrs_point_nn = torch.optim.lr_scheduler.StepLR(opt_point_nn, opt.lrstep, gamma=0.5)
+    lrs_point_nn = torch.optim.lr_scheduler.StepLR(opt_point_nn, opt.lrstep, gamma=0.5)
 
     # 2) a CNN that predicts the line parameters directly -> DirectNN (bad idea)
     # direct_nn = LineNN(opt.capacity, 0, True)
@@ -78,19 +78,23 @@ def train(opt):
     # lrs_direct_nn = torch.optim.lr_scheduler.StepLR(opt_direct_nn, opt.lrstep, gamma=0.5)
 
     # keep track of training progress
-    timestr = time.strftime("%Y%m%d%H%M%S")
-    train_log = open(os.path.join(opt.output_dir, f'log_{sid}_{timestr}.txt'), 'w', 1)
+    time_stamp = time.strftime("%Y%m%d%H%M%S")
+    train_log = open(os.path.join(opt.output_dir, f'log_{sid}_{time_stamp}.txt'), 'w', 1)
 
     # generate validation data (for consistent vizualisation only)
     val_images, val_labels = dataset.sample_lines(opt.valsize)
     val_inputs, val_labels = utils.prepare_data(opt, val_images, val_labels)
-    dataset_size = opt.batchsize * 100
-    dataset_images, dataset_labels = dataset.sample_lines(dataset_size)
+    if opt.pre_sample_data:
+        dataset_size = int(opt.batchsize * opt.trainiterations / 5.)
+        dataset_images, dataset_labels = dataset.sample_lines(dataset_size, progress=True)
     # start training
     for iteration in range(opt.trainiterations+1):
-        batch_choices = dataset._rng.integers(low=0, high=dataset_size, size=opt.batchsize)
-        batch_images, batch_labels = dataset_images[batch_choices], dataset_labels[batch_choices]
         start_time = time.time()
+        if opt.pre_sample_data:
+            batch_choices = dataset._rng.integers(low=0, high=dataset_size, size=opt.batchsize)
+            batch_images, batch_labels = dataset_images[batch_choices], dataset_labels[batch_choices]
+        else:
+            batch_images, batch_labels = dataset.sample_lines(opt.batchsize)
 
         # reset gradient buffer
         opt_point_nn.zero_grad()
@@ -107,9 +111,8 @@ def train(opt):
         exp_loss.backward()		# calculate gradients (pytorch autograd)
 
         # update parameters
-        # if iteration >= opt.lrstepoffset:
-        #     lrs_point_nn.step()		# update learning rate schedule
         opt_point_nn.step()
+        lrs_point_nn.step()
         direct_loss = 0.
         # # also train direct nn
         # direct_prediction = direct_nn(inputs)
@@ -123,15 +126,15 @@ def train(opt):
 
         # wrap up
         end_time = time.time()-start_time
-        print('Iteration: %6d, DSAC Expected Loss: %2.2f, DSAC Top Loss: %2.2f, Direct Loss: %2.2f, Time: %.2fs'
-              % (iteration, exp_loss, top_loss, direct_loss, end_time), flush=True)
+        print('Iteration: %6d, DSAC Expected Loss: %2.2f, DSAC Top Loss: %2.2f, Direct Loss: %2.2f, Time: %.2fs lr: %f'
+              % (iteration, exp_loss, top_loss, direct_loss, end_time, lrs_point_nn.optimizer.param_groups[0]['lr']), flush=True)
 
         train_log.write('%d %f %f %f\n' % (iteration, exp_loss, top_loss, direct_loss))
 
         # del exp_loss, top_loss, direct_loss
 
         # store prediction vizualization and nn weights (each couple of iterations)
-        if iteration % int(opt.storeinterval * 32 / opt.batchsize) == 0:
+        if iteration % int(opt.storeinterval) == 0:
 
             point_nn.eval()
             # direct_nn.eval()
@@ -144,16 +147,10 @@ def train(opt):
             # assert torch.allclose(val_prediction_0, val_prediction_1)
             val_prediction = point_nn(val_inputs)
             # assert torch.allclose(val_prediction_0, val_prediction[0])
-            if val_prediction.isnan().any():
-                val_prediction[val_prediction.isnan()] = 0.
-                val_exp, val_loss = 0., 0.
-                points = torch.zeros_like(val_prediction)
-                # direct_val_est = direct_val_est.cpu().numpy()
-            else:
-                val_exp, val_loss = dsac.calculate_loss(val_prediction, val_labels.cuda())
-                val_correct = dsac.est_losses < opt.valthresh
-                # dsac_val_est = dsac.est_parameters.cpu()
-                points = val_prediction.cpu()
+            val_exp, val_loss = dsac.calculate_loss(val_prediction, val_labels.cuda())
+            val_correct = dsac.est_losses < opt.valthresh
+            # dsac_val_est = dsac.est_parameters.cpu()
+            points = val_prediction.cpu()
 
 
 
@@ -179,7 +176,9 @@ def train(opt):
             viz = torch.cat((viz_inputs, viz_dsac, viz_dsac), 2)
             # viz = torch.cat((viz_inputs, viz_dsac, viz_direct), 2)
             viz.transpose_(0, 1).transpose_(1, 2)
-            viz = viz.numpy()
+            viz /= viz.max()
+            viz *= 255.
+            viz = viz.to(torch.uint8).numpy()
 
             # store image (and ignore warning about loss of precision)
             with warnings.catch_warnings():

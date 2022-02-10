@@ -132,7 +132,7 @@ class LineNN(nn.Module):
 			return x.squeeze()
 
 		# otherwise points are predicted	
-		x = torch.sigmoid(x) # normalize to 0,1
+		x = torch.sigmoid(x)  # normalize to 0,1
 
 		if self.global_model: 
 			x = x.view(-1, 2, self.global_output_grid, self.global_output_grid)

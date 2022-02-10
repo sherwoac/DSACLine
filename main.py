@@ -23,10 +23,10 @@ parser.add_argument('--inlieralpha', '-ia', type=float, default=0.5,
 parser.add_argument('--inlierbeta', '-ib', type=float, default=100.0, 
 	help='scaling factor within the sigmoid of the soft inlier count')
 
-parser.add_argument('--learningrate', '-lr', type=float, default=0.00001,
+parser.add_argument('--learningrate', '-lr', type=float, default=0.005,
 	help='learning rate')
 
-parser.add_argument('--lrstep', '-lrs', type=int, default=2500, 
+parser.add_argument('--lrstep', '-lrs', type=int, default=250,
 	help='cut learning rate in half each x iterations')
 
 parser.add_argument('--lrstepoffset', '-lro', type=int, default=30000, 
@@ -35,13 +35,13 @@ parser.add_argument('--lrstepoffset', '-lro', type=int, default=30000,
 parser.add_argument('--batchsize', '-bs', type=int, default=1024,
 	help='training batch size')
 
-parser.add_argument('--trainiterations', '-ti', type=int, default=50000, 
+parser.add_argument('--trainiterations', '-ti', type=int, default=1000,
 	help='number of training iterations (= parameter updates)')
 
 parser.add_argument('--imagesize', '-is', type=int, default=64, 
 	help='size of input images generated, images are square')
 
-parser.add_argument('--storeinterval', '-si', type=int, default=1000, 
+parser.add_argument('--storeinterval', '-si', type=int, default=100,
 	help='store network weights and a prediction vizualisation every x training iterations')
 
 parser.add_argument('--valsize', '-vs', type=int, default=9, 
@@ -67,6 +67,8 @@ parser.add_argument('--validation', '-validation', action='store_true', help='ru
 parser.add_argument('--reload', '-reload', action='store_true',
 					help='load weights of the default name and continue training')
 
+parser.add_argument('--pre_sample_data', '-pre_sample_data', action='store_true',
+					help='sample dataset upfront, 100x batches')
 
 opt = parser.parse_args()
 

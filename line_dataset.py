@@ -200,7 +200,7 @@ class LineDataset:
         intercepts = line_point_1_y - slopes * line_point_1_x
         labels[:, 0, 0, 0] = intercepts / self.imgH
         labels[:, 1, 0, 0] = slopes
-        gauss = self._rng.normal(loc=0., scale=0.1, size=(n, self.imgH, self.imgW, 3)).astype(np.float32)
+        gauss = self._rng.normal(loc=0., scale=0.1, size=(n, self.imgH, self.imgW, 3)).astype(np.float16)
         for i in tqdm.tqdm(range(n), disable=not progress):  # for each image
             # create a random number of distractor circles
             for c in range(number_of_circles[i]):
