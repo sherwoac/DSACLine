@@ -1,13 +1,8 @@
 import os
 import warnings
 import time
-import sys
-import time
 import torch
-import torchvision
 import imageio
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 # local
@@ -15,22 +10,7 @@ import utils
 from dsac_aio import DsacAio
 from line_dataset import LineDataset
 from line_nn import LineNN
-from line_squeeze import LineSqueezeNN
-from line_squeeze_fire import LineSqueezeFireNN
-from line_area_loss import LineLossArea
-from line_loss import LineLoss
 from line_loss_aio import LineLossAio
-
-
-def batch_loss(loss_function, prediction, labels):
-    # calculate the loss for each image in the batch
-
-    losses = torch.zeros(labels.size(0))
-
-    for b in range(0, labels.size(0)):
-        losses[b] = loss_function.get_loss(prediction[b], labels[b])
-
-    return losses
 
 
 def train(opt):
@@ -97,7 +77,7 @@ def train(opt):
             batch_images, batch_labels = dataset.sample_lines(opt.batchsize)
 
         # reset gradient buffer
-        opt_point_nn.zero_grad()
+
         # opt_direct_nn.zero_grad()
 
         # generate training data

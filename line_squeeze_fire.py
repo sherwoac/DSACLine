@@ -8,16 +8,15 @@ class LineSqueezeFireNN(nn.Module):
         super(LineSqueezeFireNN, self).__init__()
         self.patch_size = receptive_field / image_size
         self.cnn_model = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=2),
+            nn.Conv2d(3, 8, kernel_size=(3, 3)),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-            torchvision.models.squeezenet.Fire(64, 16, 64, 64),
-            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-            nn.Conv2d(128, image_size * 2, kernel_size=7),
+            nn.MaxPool2d(kernel_size=3, stride=1, ceil_mode=True),
+            torchvision.models.squeezenet.Fire(8, 4, 4, 4),
+            nn.Linear(64, 128),
             nn.Sigmoid())
 
     def forward(self, input_images):
-        normalized_output = self.cnn_model(input_images).view(input_images.size()[0], 2, 8, 8)
+        normalized_output = self.cnn_model(input_images)
         patch_offset = 1. / input_images.size(2)
         x = normalized_output * self.patch_size - 0.5 * self.patch_size + 0.5 * patch_offset
 
@@ -26,6 +25,6 @@ class LineSqueezeFireNN(nn.Module):
 
         for row in range(x.size(2)):
             x[:, 0, row, :] = x[:, 0, row, :] + row * patch_offset
-
+        print(x.shape)
         return x.view(input_images.size()[0], 2, -1)
 

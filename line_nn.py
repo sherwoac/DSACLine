@@ -67,28 +67,39 @@ class LineNN(nn.Module):
 			self.global_model = True
 
 		# build network
+		self.conv_list = []
 		self.conv1 = nn.Conv2d(3, 4*c, 3, strides[0], 1)
+		self.conv_list.append(self.conv1)
 		self.bn1 = nn.BatchNorm2d(4*c)
 		self.conv2 = nn.Conv2d(4*c, 8*c, 3, strides[1], 1)
+		self.conv_list.append(self.conv2)
 		self.bn2 = nn.BatchNorm2d(8*c)
 		self.conv3 = nn.Conv2d(8*c, 16*c, 3, strides[2], 1)
+		self.conv_list.append(self.conv3)
 		self.bn3 = nn.BatchNorm2d(16*c)
 		self.conv4 = nn.Conv2d(16*c, 32*c, 3, strides[3], 1)
+		self.conv_list.append(self.conv4)
 		self.bn4 = nn.BatchNorm2d(32*c)
 		self.conv5 = nn.Conv2d(32*c, 64*c, 3, strides[4], 1)
+		self.conv_list.append(self.conv5)
 		self.bn5 = nn.BatchNorm2d(64*c)
 		self.conv6 = nn.Conv2d(64*c, 64*c, 3, strides[5], 1)
+		self.conv_list.append(self.conv6)
 		self.bn6 = nn.BatchNorm2d(64*c)
 		self.conv7 = nn.Conv2d(64*c, 64*c, 3, strides[6], 1)
+		self.conv_list.append(self.conv7)
 		self.bn7 = nn.BatchNorm2d(64*c)
 		
 		self.pool = nn.AdaptiveMaxPool2d(1) #used only for global models to support arbitrary image size
 
 		self.fc1 = nn.Conv2d(64*c, 64*c, 1, 1, 0)
+		self.conv_list.append(self.fc1)
 		self.bn8 = nn.BatchNorm2d(64*c)
 		self.fc2 = nn.Conv2d(64*c, 64*c, 1, 1, 0)
+		self.conv_list.append(self.fc2)
 		self.bn9 = nn.BatchNorm2d(64*c)
 		self.fc3 = nn.Conv2d(64*c, output_dim, 1, 1, 0)
+		self.conv_list.append(self.fc3)
 
 		self.patch_size = receptive_field / image_size
 		self.global_output_grid = global_output_grid
@@ -112,20 +123,34 @@ class LineNN(nn.Module):
 
 		batch_size = input.size(0)
 
-		x = F.relu(self.bn1(self.conv1(input)))
-		x = F.relu(self.bn2(self.conv2(x)))
-		x = F.relu(self.bn3(self.conv3(x)))
-		x = F.relu(self.bn4(self.conv4(x)))
-		x = F.relu(self.bn5(self.conv5(x)))
-		x = F.relu(self.bn6(self.conv6(x)))
-		x = F.relu(self.bn7(self.conv7(x)))
+		# x = F.relu(self.bn1(self.conv1(input)))
+		# x = F.relu(self.bn2(self.conv2(x)))
+		# x = F.relu(self.bn3(self.conv3(x)))
+		# x = F.relu(self.bn4(self.conv4(x)))
+		# x = F.relu(self.bn5(self.conv5(x)))
+		# x = F.relu(self.bn6(self.conv6(x)))
+		# x = F.relu(self.bn7(self.conv7(x)))
+
+		x = F.relu(self.bn1(self.conv_list[0](input)))
+		x = F.relu(self.bn2(self.conv_list[1](x)))
+		x = F.relu(self.bn3(self.conv_list[2](x)))
+		x = F.relu(self.bn4(self.conv_list[3](x)))
+		x = F.relu(self.bn5(self.conv_list[4](x)))
+		x = F.relu(self.bn6(self.conv_list[5](x)))
+		x = F.relu(self.bn7(self.conv_list[6](x)))
+
 
 		if self.global_model:
 			x = self.pool(x)
 
-		x = F.relu(self.bn8(self.fc1(x)))
-		x = F.relu(self.bn9(self.fc2(x)))
-		x = self.fc3(x)
+		# x = F.relu(self.bn8(self.fc1(x)))
+		# x = F.relu(self.bn9(self.fc2(x)))
+		# x = self.fc3(x)
+
+		x = F.relu(self.bn8(self.conv_list[7](x)))
+		x = F.relu(self.bn9(self.conv_list[8](x)))
+		x = self.conv_list[9](x)
+
 
 		# direct model predicts line paramters directly
 		if self.direct_model: 
