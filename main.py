@@ -23,7 +23,7 @@ parser.add_argument('--inlieralpha', '-ia', type=float, default=0.5,
 parser.add_argument('--inlierbeta', '-ib', type=float, default=100.0, 
 	help='scaling factor within the sigmoid of the soft inlier count')
 
-parser.add_argument('--learningrate', '-lr', type=float, default=0.005,
+parser.add_argument('--learningrate', '-lr', type=float, default=0.001,
 	help='learning rate')
 
 parser.add_argument('--lrstep', '-lrs', type=int, default=250,
@@ -41,7 +41,7 @@ parser.add_argument('--trainiterations', '-ti', type=int, default=1000,
 parser.add_argument('--imagesize', '-is', type=int, default=64, 
 	help='size of input images generated, images are square')
 
-parser.add_argument('--storeinterval', '-si', type=int, default=100,
+parser.add_argument('--storeinterval', '-si', type=int, default=10,
 	help='store network weights and a prediction vizualisation every x training iterations')
 
 parser.add_argument('--valsize', '-vs', type=int, default=9, 
