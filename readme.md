@@ -11,6 +11,7 @@ This is a fork of the [original repo](https://github.com/vislearn/DSACLine). I h
 - re-implemented the code to efficiently utilize the GPU, including by creating [line_loss_aio.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss_aio.py) the GPU-ified analogue of [line_loss.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss.py) - training time goes from **days to minutes**
 - added [TESTS](https://github.com/sherwoac/DSACLine/tree/master/TESTS) to drive the development of the above functionality
 - created a summary [notebook](https://github.com/sherwoac/DSACLine/blob/master/differentiable_ransac.ipynb), demonstrating the technique
+- created equivalent for colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sherwoac/DSACLine/blob/master/colab_differentiable_ransac.ipynb)
 - refactored the code in various ways for reusabilty
 
 ## Introduction
