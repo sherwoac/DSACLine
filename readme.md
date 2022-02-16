@@ -9,7 +9,7 @@
 ## Preface
 This is a fork of the [original repo](https://github.com/vislearn/DSACLine). I have made the following changes:
 - re-implemented the code to efficiently utilize the GPU, including:
-  - creating [line_loss_aio.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss_aio.py) the GPU-ified analogue of [line_loss.py] (https://github.com/sherwoac/DSACLine/blob/master/line_loss.py)
+  - creating [line_loss_aio.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss_aio.py) the GPU-ified analogue of [line_loss.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss.py)
   - added [TESTS](https://github.com/sherwoac/DSACLine/tree/master/TESTS) to drive the development of the above functionality
   - created a summary [notebook](https://github.com/sherwoac/DSACLine/blob/master/differentiable_ransac.ipynb), demonstrating the technique
 
