@@ -12,7 +12,7 @@ This is a fork of the [original repo](https://github.com/vislearn/DSACLine). I h
 - added [TESTS](https://github.com/sherwoac/DSACLine/tree/master/TESTS) to drive the development of the above functionality
 - demonstrating the technique using [notebook](https://github.com/sherwoac/DSACLine/blob/master/differentiable_ransac.ipynb), also for colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sherwoac/DSACLine/blob/master/colab_differentiable_ransac.ipynb)
 - refactored the code in various ways for reusabilty
-- the new environment is captured in `environment.yml`, installed with: 
+- a new [conda](http://conda.io) environment is captured in `environment.yml`, installed with: 
 ```
 conda env create -f ./environment.yml
 ```
