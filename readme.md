@@ -1,4 +1,4 @@
-# Difference from original fork
+# Difference from original repo
 This is a fork of the [original repo](https://github.com/vislearn/DSACLine). I have made the following changes:
 - re-implemented the code to efficiently utilize the GPU, including by creating [line_loss_aio.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss_aio.py) the GPU-ified analogue of [line_loss.py](https://github.com/sherwoac/DSACLine/blob/master/line_loss.py) - training time goes from **days to minutes**
 - added [TESTS](https://github.com/sherwoac/DSACLine/tree/master/TESTS) to drive the development of the above functionality
